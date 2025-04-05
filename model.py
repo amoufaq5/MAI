@@ -68,3 +68,9 @@ def load_trained_model():
     encoder = load_encoder()
     return model, vectorizer, encoder
 
+def predict_drug(input_text, model, vectorizer, encoder):
+    prediction = model.predict([input_text])
+    predicted_class = prediction.argmax(axis=-1)[0]
+    predicted_drug = encoder.inverse_transform([predicted_class])[0]
+    return predicted_drug, prediction[0]
+
