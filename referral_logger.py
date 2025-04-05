@@ -1,58 +1,41 @@
 import json
 import os
 from datetime import datetime
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
-REFERRAL_LOG = "referrals.json"
+REFERRAL_FILE = "referrals.json"
+OUTBREAK_FILE = "outbreak_log.json"
+PROFILE_FILE = "user_profiles.json"
 
-# Update these for your environment
-EMAIL_SENDER = "your-email@example.com"
-EMAIL_RECEIVER = "doctor@example.com"
-SMTP_SERVER = "smtp.example.com"
-SMTP_PORT = 587
-EMAIL_PASSWORD = "your-password"
-
-
-def log_referral(session_id, symptoms, drug, confidence):
-    os.makedirs(os.path.dirname(REFERRAL_LOG), exist_ok=True)
+def log_referral(username, disease, symptoms, drug):
     entry = {
-        "session_id": session_id,
-        "timestamp": datetime.utcnow().isoformat(),
+        "username": username,
+        "datetime": str(datetime.now()),
+        "disease": disease,
         "symptoms": symptoms,
-        "recommended_drug": drug,
-        "confidence": confidence
+        "suggested_drug": drug,
+        "reason": "Requires prescription. Referred to doctor."
     }
+    _append_json(REFERRAL_FILE, entry)
 
-    if os.path.exists(REFERRAL_LOG):
-        with open(REFERRAL_LOG, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    else:
-        data = []
+def log_outbreak(disease):
+    today = datetime.today().strftime('%Y-%m-%d')
+    entry = {"date": today, "disease": disease}
+    _append_json(OUTBREAK_FILE, entry)
 
-    data.append(entry)
+def save_user_profile(username, symptoms, disease):
+    profile = {
+        "username": username,
+        "datetime": str(datetime.now()),
+        "symptoms": symptoms,
+        "diagnosis": disease
+    }
+    _append_json(PROFILE_FILE, profile)
 
-    with open(REFERRAL_LOG, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-
-def send_referral_email(session_id, drug, symptoms):
-    try:
-        subject = f"🚨 MYD Referral Triggered – Session {session_id}"
-        body = f"A patient has been flagged for urgent attention.\n\nSession ID: {session_id}\nRecommended Drug: {drug}\nSymptoms: {symptoms}"
-
-        msg = MIMEMultipart()
-        msg['From'] = EMAIL_SENDER
-        msg['To'] = EMAIL_RECEIVER
-        msg['Subject'] = subject
-
-        msg.attach(MIMEText(body, 'plain'))
-
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            server.send_message(msg)
-        print("📩 Referral email sent.")
-    except Exception as e:
-        print("❌ Failed to send referral email:", str(e))
+def _append_json(file, data):
+    if not os.path.exists(file):
+        with open(file, "w") as f: json.dump([], f)
+    with open(file, "r+") as f:
+        logs = json.load(f)
+        logs.append(data)
+        f.seek(0)
+        json.dump(logs, f, indent=2)
