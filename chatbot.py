@@ -1,77 +1,84 @@
+from symptom_clarifier import detect_symptoms_for_clarification, get_clarification_questions
 from disease_model import predict_disease
 from referral_logger import log_referral, log_outbreak, save_user_profile
 import pandas as pd
 
+drug_df = pd.read_csv("data.csv")
+
 class ChatBot:
     def __init__(self, username="guest"):
         self.username = username
-        self.questions = [
-            "1. Please describe your age and appearance.",
-            "2. Is this for you or someone else?",
-            "3. Are you taking any medication?",
-            "4. Any extra medicines or supplements?",
-            "5. How long have you had the symptoms?",
-            "6. Any relevant medical history?",
-            "7. What symptoms are you experiencing?",
-            "8. Are there any danger symptoms?"
-        ]
-        self.index = 0
-        self.responses = []
-        self.finished = False
-        self.df = pd.read_csv("data.csv")
+        self.reset()
 
     def reset(self):
-        self.index = 0
-        self.responses = []
-        self.finished = False
+        self.symptoms = ""
+        self.disease = ""
+        self.collected = []
+        self.current_index = 0
+        self.pending_symptoms = []
+        self.pending_questions = []
+        self.clarification_mode = False
+        self.clarified = {}
 
-    def find_drug(self, disease):
-        match = self.df[self.df["disease"].str.lower() == disease.lower()]
-        if not match.empty:
-            otc = match[match["drug_type"].str.upper() == "OTC"]
+    def handle_message(self, msg):
+        if msg.lower() == "start":
+            self.reset()
+            return "🩺 Please describe your symptoms."
+
+        if not self.symptoms:
+            self.symptoms = msg
+            self.pending_symptoms = detect_symptoms_for_clarification(msg)
+            if self.pending_symptoms:
+                self.clarification_mode = True
+                return self._ask_next_clarification()
+            else:
+                return self._final_diagnosis()
+
+        if self.clarification_mode:
+            last_symptom = self.pending_symptoms[0]
+            self.clarified.setdefault(last_symptom, []).append(msg)
+
+            if self.pending_questions:
+                return self._ask_next_clarification()
+            else:
+                self.pending_symptoms.pop(0)
+                if self.pending_symptoms:
+                    return self._ask_next_clarification()
+                else:
+                    self.clarification_mode = False
+                    return self._final_diagnosis()
+
+    def _ask_next_clarification(self):
+        symptom = self.pending_symptoms[0]
+        if not self.pending_questions:
+            self.pending_questions = get_clarification_questions(symptom)
+        return self.pending_questions.pop(0)
+
+    def _final_diagnosis(self):
+        enriched = self.symptoms
+        for vals in self.clarified.values():
+            enriched += " " + " ".join(vals)
+
+        disease, confidence = predict_disease(enriched)
+        drug, dtype = self._find_drug(disease)
+
+        save_user_profile(self.username, enriched, disease)
+        log_outbreak(disease)
+
+        if dtype == "OTC":
+            return f"🧠 Likely: {disease} ({confidence}%)\n💊 OTC Suggestion: {drug}"
+        elif dtype == "RX":
+            log_referral(self.username, disease, enriched, drug)
+            return f"🧠 Likely: {disease} ({confidence}%)\n⚠️ Drug requires a prescription: {drug}\n📩 Referral sent to your doctor."
+        else:
+            return f"🧠 Likely: {disease} ({confidence}%)\n⚠️ No drug found."
+
+    def _find_drug(self, disease):
+        rows = drug_df[drug_df["disease"].str.lower() == disease.lower()]
+        if not rows.empty:
+            otc = rows[rows["drug_type"].str.upper() == "OTC"]
             if not otc.empty:
                 return otc.iloc[0]["drug name"], "OTC"
             else:
-                return match.iloc[0]["drug name"], "RX"
+                return rows.iloc[0]["drug name"], "RX"
         return None, None
-
-    def handle_message(self, message):
-        if message.lower() == "start":
-            self.reset()
-            return self.questions[self.index]
-
-        if self.finished:
-            return "Type 'start' to begin a new diagnosis."
-
-        self.responses.append(message)
-        self.index += 1
-
-        if self.index < len(self.questions):
-            return self.questions[self.index]
-        else:
-            full_input = " ".join(self.responses)
-            disease, confidence = predict_disease(full_input)
-            drug, dtype = self.find_drug(disease)
-
-            log_outbreak(disease)
-            save_user_profile(self.username, full_input, disease)
-
-            self.finished = True
-
-            if dtype == "OTC":
-                return (
-                    f"🧠 Most likely condition: {disease} ({confidence}%)\n"
-                    f"💊 You can take: **{drug}** (Over-the-counter)"
-                )
-            elif dtype == "RX":
-                log_referral(self.username, disease, full_input, drug)
-                return (
-                    f"🧠 Most likely condition: {disease} ({confidence}%)\n"
-                    f"⚠️ This drug requires a prescription: **{drug}**\n"
-                    f"📩 Your case has been referred to a doctor with your notes."
-                )
-            else:
-                return (
-                    f"🧠 Most likely condition: {disease} ({confidence}%)\n"
-                    f"⚠️ No suitable drug was found in our records. Please consult a healthcare provider."
-                )
