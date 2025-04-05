@@ -162,6 +162,7 @@ def change_pw():
     </form>
     <p>{message}</p>
     return "<a href='/'>&larr; Back</a>"
+  
     </body></html>
     """
 
