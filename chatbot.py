@@ -1,58 +1,46 @@
-from model import predict_diagnosis
+from model import predict_drug
 
 class ChatBot:
-    def __init__(self, model, vectorizer):
+    def __init__(self, model, vectorizer, encoder):
         self.model = model
         self.vectorizer = vectorizer
-        self.conversation_state = {}
+        self.encoder = encoder
         self.questions = [
-            "Please provide your age and appearance (ASMETHOD: Age/appearance).",
-            "Is it you or someone else experiencing the symptoms? (ASMETHOD: Self or someone else)",
-            "What medications are you currently taking? (ASMETHOD: Medication)",
-            "Are you taking any extra medicines? (ASMETHOD: Extra medicines)",
-            "How long have these symptoms persisted? (ASMETHOD: Time persisting)",
-            "Do you have any relevant medical history? (ASMETHOD: History)",
-            "What other symptoms are you experiencing? (ASMETHOD: Other symptoms)",
-            "Are there any danger symptoms present? (ASMETHOD: Danger symptoms)"
-            # Extend with ENCORE and SIT DOWN SIR questions as needed.
+            "Please provide your age and appearance.",
+            "Is it you or someone else experiencing symptoms?",
+            "Any current medications?",
+            "Any extra medicines or supplements?",
+            "How long has this been going on?",
+            "Any relevant medical history?",
+            "What symptoms are you experiencing?",
+            "Are there any danger symptoms?"
         ]
-        self.current_question_index = 0
-        self.collected_data = []
-        self.final_response_given = False
+        self.current_index = 0
+        self.collected = []
+        self.finished = False
 
     def handle_message(self, message):
-        # If conversation is complete, restart on new conversation
-        if self.final_response_given:
-            self.reset_conversation()
+        if self.finished:
+            self.reset()
+            return "Type 'start' to begin a new diagnosis."
 
-        # Allow user to explicitly start a new diagnosis session
-        if message.lower() in ['start', 'begin']:
-            self.reset_conversation()
-            return self.questions[self.current_question_index]
-        
-        # Record the answer for the current question
-        if self.current_question_index < len(self.questions):
-            self.collected_data.append(message)
-            self.current_question_index += 1
-        
-        # If more questions remain, ask the next one
-        if self.current_question_index < len(self.questions):
-            return self.questions[self.current_question_index]
+        if message.lower() == 'start':
+            self.reset()
+            return self.questions[0]
+
+        if self.current_index < len(self.questions):
+            self.collected.append(message)
+            self.current_index += 1
+
+        if self.current_index < len(self.questions):
+            return self.questions[self.current_index]
         else:
-            # All questions answered: aggregate the responses
-            aggregated_input = " ".join(self.collected_data)
-            predicted_class, probabilities = predict_diagnosis(aggregated_input, self.model, self.vectorizer)
-            # Interpret the prediction
-            if predicted_class == 0:
-                diagnosis = "Based on your responses, an OTC medication may be appropriate."
-            else:
-                diagnosis = "Based on your responses, it is recommended that you see a doctor for further evaluation."
-            self.final_response_given = True
-            # Include confidence percentages (for transparency; adjust as needed)
-            response = diagnosis + " (Confidence: OTC: {:.2f}%, Refer: {:.2f}%)".format(probabilities[0]*100, probabilities[1]*100)
-            return response
+            full_input = " ".join(self.collected)
+            drug, probs = predict_drug(full_input, self.model, self.vectorizer, self.encoder)
+            self.finished = True
+            return f"✅ Based on your symptoms, you can take: **{drug}** (OTC)"
 
-    def reset_conversation(self):
-        self.current_question_index = 0
-        self.collected_data = []
-        self.final_response_given = False
+    def reset(self):
+        self.collected = []
+        self.current_index = 0
+        self.finished = False
