@@ -2,6 +2,8 @@ from session_logger import start_new_session, log_message, log_final_recommendat
 from model import predict_drug
 from response_templates import make_human_response
 from langdetect import detect
+from user_profile import save_user_profile
+from feedback_collector import store_feedback
 
 
 class ChatBot:
@@ -11,7 +13,6 @@ class ChatBot:
         self.encoder = encoder
         self.df = df
 
-        # English ASMETHOD questions
         self.questions_en = [
             "Please provide your age and appearance.",
             "Is it you or someone else experiencing symptoms?",
@@ -23,7 +24,6 @@ class ChatBot:
             "Are there any danger symptoms?"
         ]
 
-        # Arabic ASMETHOD questions
         self.questions_ar = [
             "يرجى وصف عمرك ومظهرك.",
             "هل الأعراض لك أم لشخص آخر؟",
@@ -39,8 +39,13 @@ class ChatBot:
         self.current_index = 0
         self.collected = []
         self.finished = False
+        self.feedback_stage = False
+        self.waiting_for_feedback = False
+        self.corrected_drug = None
         self.lang = "en"
         self.session_id, self.log_file = start_new_session()
+        self.last_prediction = None
+        self.last_input_text = ""
 
     def handle_message(self, message):
         log_message(self.log_file, "user", message)
@@ -51,15 +56,17 @@ class ChatBot:
         except:
             self.lang = "en"
 
-        # Choose appropriate language for questions
+        # Use proper language set
         self.questions = self.questions_ar if self.lang == "ar" else self.questions_en
 
-        if self.finished:
+        # Reset if conversation is finished
+        if self.finished and not self.waiting_for_feedback:
             self.reset()
             response = "ابدأ من جديد بكتابة 'start'" if self.lang == "ar" else "Type 'start' to begin a new diagnosis."
             log_message(self.log_file, "bot", response)
             return response
 
+        # Handle restart
         if message.lower() == 'start':
             self.reset()
             self.questions = self.questions_ar if self.lang == "ar" else self.questions_en
@@ -67,30 +74,16 @@ class ChatBot:
             log_message(self.log_file, "bot", response)
             return response
 
-        if self.current_index < len(self.questions):
-            self.collected.append(message)
-            self.current_index += 1
+        # Handle feedback response
+        if self.waiting_for_feedback:
+            if message.strip().lower() in ["yes", "نعم"]:
+                store_feedback(self.session_id, self.last_input_text, self.last_prediction, self.last_prediction, "positive")
+                response = "Thank you for confirming!" if self.lang == "en" else "شكراً لتأكيدك!"
+                self.waiting_for_feedback = False
+                log_message(self.log_file, "bot", response)
+                return response
 
-        if self.current_index < len(self.questions):
-            response = self.questions[self.current_index]
-            log_message(self.log_file, "bot", response)
-            return response
-        else:
-            # All questions answered — generate prediction
-            full_input = " ".join(self.collected)
-            drug, confidence, side_effects = predict_drug(
-                full_input, self.model, self.vectorizer, self.encoder, self.df
-            )
-            self.finished = True
-
-            response = make_human_response(drug, confidence, side_effects, lang=self.lang)
-
-            log_final_recommendation(self.log_file, drug, confidence, side_effects)
-            log_message(self.log_file, "bot", response)
-            return response
-
-    def reset(self):
-        self.collected = []
-        self.current_index = 0
-        self.finished = False
-        self.session_id, self.log_file = start_new_session()
+            else:
+                self.feedback_stage = True
+                self.waiting_for_feedback = False
+                response = "What drug did you
