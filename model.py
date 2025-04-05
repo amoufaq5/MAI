@@ -19,14 +19,14 @@ def build_model(text_vectorizer, vocab_size, embedding_dim=64, max_length=100):
 
 
 def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, max_length=100, epochs=5):
-    # Create and adapt vectorizer
+    import numpy as np
+
     text_vectorizer = tf.keras.layers.TextVectorization(
         max_tokens=vocab_size,
         output_mode='int',
         output_sequence_length=max_length
     )
 
-    # Clean text list
     train_texts = [t for t in train_texts if t.strip()]
     if len(train_texts) == 0:
         raise ValueError("All training texts are empty after cleaning.")
@@ -35,19 +35,26 @@ def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, m
     vocab = text_vectorizer.get_vocabulary()
 
     if len(vocab) <= 2:
-        raise ValueError("Vocabulary is too small after processing. Check dataset for valid tokens.")
+        raise ValueError("Vocabulary too small after cleaning.")
 
     # Save vectorizer
     os.makedirs(os.path.dirname(VECTORIZER_PATH), exist_ok=True)
     with open(VECTORIZER_PATH, 'wb') as f:
         pickle.dump((text_vectorizer.get_config(), text_vectorizer.get_weights()), f)
 
-    # Build model with embedded vectorizer
+    # Build model
     model = build_model(text_vectorizer, vocab_size, embedding_dim, max_length)
 
-    model.fit(train_texts, train_labels, epochs=epochs, validation_split=0.2)
+    # Convert to NumPy arrays
+    train_texts_np = np.array(train_texts)
+    train_labels_np = np.array(train_labels)
 
+    # Train
+    model.fit(train_texts_np, train_labels_np, epochs=epochs, validation_split=0.2)
+
+    # Save model
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
     model.save(MODEL_PATH)
 
     return model, text_vectorizer
+
