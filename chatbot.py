@@ -2,9 +2,13 @@ from model import predict_drug
 
 class ChatBot:
     def __init__(self, model, vectorizer, encoder):
+       class ChatBot:
+    def __init__(self, model, vectorizer, encoder, df):
         self.model = model
         self.vectorizer = vectorizer
         self.encoder = encoder
+        self.df = df
+        
         self.questions = [
             "Please provide your age and appearance.",
             "Is it you or someone else experiencing symptoms?",
