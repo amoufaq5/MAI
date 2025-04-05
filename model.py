@@ -7,9 +7,9 @@ VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
 def build_model(vocab_size, embedding_dim=64, max_length=100):
     model = tf.keras.Sequential([
-        # Input: raw text strings
+        # Input layer receives raw text strings
         tf.keras.layers.Input(shape=(None,), dtype=tf.string, name='text_input'),
-        # Convert text to integer tokens
+        # TextVectorization converts text to integer tokens
         tf.keras.layers.TextVectorization(
             max_tokens=vocab_size,
             output_mode='int',
@@ -26,11 +26,10 @@ def build_model(vocab_size, embedding_dim=64, max_length=100):
 def safe_get_vocabulary(vectorizer):
     """
     Attempts to retrieve the vocabulary from the TextVectorization layer.
-    If a UnicodeDecodeError occurs, falls back to extracting the vocabulary
-    from the underlying lookup table.
+    If a UnicodeDecodeError occurs, falls back to iterating over each index 
+    using the lookup layer's index_to_string() method.
     """
     try:
-        # Try to get the vocabulary normally
         raw_vocab = vectorizer.get_vocabulary()
         vocab = []
         for token in raw_vocab:
@@ -40,19 +39,15 @@ def safe_get_vocabulary(vectorizer):
                 vocab.append('')
         return vocab
     except UnicodeDecodeError:
-        # Fallback: use the underlying lookup table to export the keys
-        table = vectorizer._lookup_layer._table  # Access the private table
-        keys_tensor, _ = table.export()  # export returns (keys, values)
-        raw_vocab = keys_tensor.numpy().tolist()
+        # Fallback: iterate over the vocabulary indices using index_to_string()
         vocab = []
-        for token in raw_vocab:
+        vocab_size = vectorizer._lookup_layer.vocab_size()
+        for i in range(vocab_size):
             try:
-                if isinstance(token, bytes):
-                    vocab.append(token.decode('utf-8', errors='ignore'))
-                else:
-                    vocab.append(token)
+                token = vectorizer._lookup_layer.index_to_string(i)
             except Exception:
-                vocab.append('')
+                token = ''
+            vocab.append(token)
         return vocab
 
 def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, max_length=100, epochs=10):
@@ -67,7 +62,7 @@ def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, m
     )
     vectorizer.adapt(train_texts)
     
-    # Retrieve the vocabulary using our safe helper
+    # Retrieve the vocabulary using our safe helper function
     vocab = safe_get_vocabulary(vectorizer)
     
     # Save the vectorizer configuration and vocabulary
