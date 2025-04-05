@@ -2,9 +2,11 @@ from flask import Flask, render_template_string, request, send_file, redirect, u
 import json
 import os
 import pandas as pd
+from user_auth import authenticate_user, change_password, init_user_db
 
 app = Flask(__name__)
-app.secret_key = "your-secret-key"  # required for login session
+app.secret_key = "your-secret-key"
+init_user_db()
 
 TEMPLATE = """
 <!DOCTYPE html>
@@ -31,6 +33,7 @@ TEMPLATE = """
             <input type="text" name="q" placeholder="Search symptoms or drug" value="{{ query }}">
             <button type="submit">Search</button>
             <a href="/export" style="margin-left: 20px;">Export to Excel</a>
+            <a href="/change-password" style="margin-left: 20px;">Change Password</a>
             <a href="/logout" style="margin-left: 20px;">Logout</a>
         </form>
     </div>
@@ -68,16 +71,32 @@ LOGIN_TEMPLATE = """
 <!DOCTYPE html>
 <html><head><title>Login</title></head>
 <body style="font-family:sans-serif; text-align:center; margin-top:100px">
-<h2>Doctor Login</h2>
+<h2>Login</h2>
 <form method="post">
-    <input type="password" name="password" placeholder="Enter password">
+    <input name="username" placeholder="Username"><br><br>
+    <input type="password" name="password" placeholder="Password"><br><br>
     <button type="submit">Login</button>
 </form>
 </body>
 </html>
 """
 
-@app.route("/", methods=["GET"])
+CHANGE_PASSWORD_TEMPLATE = """
+<!DOCTYPE html>
+<html><head><title>Change Password</title></head>
+<body style="font-family:sans-serif; text-align:center; margin-top:100px">
+<h2>Change Password for {{ user }}</h2>
+<form method="post">
+    <input type="password" name="new_password" placeholder="New Password">
+    <button type="submit">Change</button>
+</form>
+{% if message %}<p>{{ message }}</p>{% endif %}
+<a href="/">⬅ Back</a>
+</body>
+</html>
+"""
+
+@app.route("/")
 def dashboard():
     if not session.get("authenticated"):
         return redirect("/login")
@@ -110,15 +129,35 @@ def export_excel():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        if request.form.get("password") == "doctor123":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        role = authenticate_user(username, password)
+        if role:
             session["authenticated"] = True
+            session["user"] = username
+            session["role"] = role
             return redirect("/")
     return render_template_string(LOGIN_TEMPLATE)
 
 @app.route("/logout")
 def logout():
-    session.pop("authenticated", None)
+    session.clear()
     return redirect("/login")
+
+@app.route("/change-password", methods=["GET", "POST"])
+def change_pw():
+    if not session.get("authenticated"):
+        return redirect("/login")
+
+    message = ""
+    if request.method == "POST":
+        new_pw = request.form.get("new_password")
+        if change_password(session["user"], new_pw):
+            message = "✅ Password changed successfully."
+        else:
+            message = "❌ Error changing password."
+
+    return render_template_string(CHANGE_PASSWORD_TEMPLATE, user=session["user"], message=message)
 
 if __name__ == "__main__":
     app.run(port=7000, debug=True)
