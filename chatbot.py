@@ -22,44 +22,50 @@ class ChatBot:
         self.finished = False
         self.session_id, self.log_file = start_new_session()
 
-
     def handle_message(self, message):
         log_message(self.log_file, "user", message)
-...
-log_message(self.log_file, "bot", response)
 
         if self.finished:
             self.reset()
-            return "Type 'start' to begin a new diagnosis."
+            response = "Type 'start' to begin a new diagnosis."
+            log_message(self.log_file, "bot", response)
+            return response
 
         if message.lower() == 'start':
             self.reset()
-            return self.questions[0]
+            response = self.questions[0]
+            log_message(self.log_file, "bot", response)
+            return response
 
         if self.current_index < len(self.questions):
             self.collected.append(message)
             self.current_index += 1
 
-      if self.current_index >= len(self.questions):
-    full_input = " ".join(self.collected)
-    drug, confidence, side_effects = predict_drug(
-        full_input, self.model, self.vectorizer, self.encoder, self.df
-    )
-    self.finished = True
+        if self.current_index < len(self.questions):
+            response = self.questions[self.current_index]
+            log_message(self.log_file, "bot", response)
+            return response
+        else:
+            # All questions answered – process diagnosis
+            full_input = " ".join(self.collected)
+            drug, confidence, side_effects = predict_drug(
+                full_input, self.model, self.vectorizer, self.encoder, self.df
+            )
+            self.finished = True
 
-    response = (
-        f"✅ Based on your symptoms, you can take:\n"
-        f"**🩺 {drug}**\n"
-        f"💊 *Confidence:* {confidence:.1f}%\n"
-        f"⚠️ *Common side effects:* {side_effects if side_effects else 'N/A'}"
-    )
+            response = (
+                f"✅ Based on your symptoms, you can take:\n"
+                f"**🩺 {drug}**\n"
+                f"💊 *Confidence:* {confidence:.1f}%\n"
+                f"⚠️ *Common side effects:* {side_effects if side_effects else 'N/A'}"
+            )
 
-    log_final_recommendation(self.log_file, drug, confidence, side_effects)
-    log_message(self.log_file, "bot", response)
-    return response
-
+            log_final_recommendation(self.log_file, drug, confidence, side_effects)
+            log_message(self.log_file, "bot", response)
+            return response
 
     def reset(self):
         self.collected = []
         self.current_index = 0
         self.finished = False
+        self.session_id, self.log_file = start_new_session()
