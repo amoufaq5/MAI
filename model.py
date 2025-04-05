@@ -7,8 +7,8 @@ VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
 def build_model(vocab_size, embedding_dim=64, max_length=100):
     model = tf.keras.Sequential([
-        # Input layer receives raw text strings
-        tf.keras.layers.Input(shape=(None,), dtype=tf.string, name='text_input'),
+        # Input layer: each sample is a single string, so shape=() (scalar)
+        tf.keras.layers.Input(shape=(), dtype=tf.string, name='text_input'),
         # TextVectorization converts text to integer tokens
         tf.keras.layers.TextVectorization(
             max_tokens=vocab_size,
