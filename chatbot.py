@@ -1,3 +1,4 @@
+from session_logger import start_new_session, log_message, log_final_recommendation
 from model import predict_drug
 
 class ChatBot:
