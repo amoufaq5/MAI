@@ -5,6 +5,8 @@ from langdetect import detect
 from user_profile import save_user_profile
 from feedback_collector import store_feedback
 from fhir_exporter import generate_fhir_bundle
+from referral_logger import log_referral, send_referral_email
+from referral_pdf import generate_referral_pdf
 import json
 import os
 import requests
@@ -121,25 +123,22 @@ class ChatBot:
             save_user_profile(self.session_id, self.collected, self.lang)
             log_final_recommendation(self.log_file, drug, confidence, side_effects)
 
-            bundle = generate_fhir_bundle(
-                self.session_id,
-                {
-                    "age_appearance": self.collected[0],
-                    "for_whom": self.collected[1],
-                    "medications": self.collected[2],
-                    "extras": self.collected[3],
-                    "duration": self.collected[4],
-                    "history": self.collected[5],
-                    "symptoms": self.collected[6],
-                    "danger_signs": self.collected[7]
-                },
-                {
-                    "drug": drug,
-                    "confidence": confidence,
-                    "side_effects": side_effects
-                },
-                self.lang
-            )
+            profile_data = {
+                "age_appearance": self.collected[0],
+                "for_whom": self.collected[1],
+                "medications": self.collected[2],
+                "extras": self.collected[3],
+                "duration": self.collected[4],
+                "history": self.collected[5],
+                "symptoms": self.collected[6],
+                "danger_signs": self.collected[7]
+            }
+
+            bundle = generate_fhir_bundle(self.session_id, profile_data, {
+                "drug": drug,
+                "confidence": confidence,
+                "side_effects": side_effects
+            }, self.lang)
 
             os.makedirs("ehr_exports", exist_ok=True)
             with open(f"ehr_exports/fhir_bundle_{self.session_id}.json", "w", encoding="utf-8") as f:
@@ -149,6 +148,10 @@ class ChatBot:
             try:
                 res = requests.post("http://localhost:6000/ehr/receive", json=bundle)
                 if res.ok and res.json().get("referral"):
+                    # Log + Notify + PDF
+                    log_referral(self.session_id, profile_data["danger_signs"], drug, confidence)
+                    send_referral_email(self.session_id, drug, profile_data["danger_signs"])
+                    generate_referral_pdf(self.session_id, profile_data, drug, confidence)
                     referral_msg = "\n🚨 Your symptoms require urgent medical attention. Please consult a doctor immediately."
             except Exception as e:
                 print("⚠️ Failed to send to mock EHR:", e)
