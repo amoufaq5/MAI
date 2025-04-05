@@ -25,34 +25,32 @@ def build_model(vocabulary_size, embedding_dim=64, max_length=100):
 
 def safe_get_vocabulary(vectorizer):
     """
-    Attempts to retrieve the vocabulary from the TextVectorization layer.
-    If a UnicodeDecodeError occurs, falls back to iterating over the
-    vocabulary indices using the lookup layer's index_to_string() method.
+    Attempts to retrieve and process the vocabulary from the TextVectorization layer.
+    If the resulting vocabulary is empty, raises an error to alert you to check your training texts.
     """
     try:
         raw_vocab = vectorizer.get_vocabulary()
-        vocab = []
-        for token in raw_vocab:
-            try:
-                vocab.append(tf.compat.as_text(token, vectorizer.encoding))
-            except Exception:
-                vocab.append('')
-        return vocab
     except UnicodeDecodeError:
-        # Fallback: iterate over the vocabulary indices using index_to_string()
-        vocab = []
+        # Fallback: iterate over vocabulary indices using index_to_string()
+        raw_vocab = []
         vocab_size = vectorizer._lookup_layer.vocab_size()
         for i in range(vocab_size):
             try:
                 token = vectorizer._lookup_layer.index_to_string(i)
             except Exception:
                 token = ''
-            vocab.append(token)
-        return vocab
-
-def uniquify_vocabulary(vocab):
-    """Remove empty strings and duplicates while preserving order."""
-    # Remove empty tokens
+            raw_vocab.append(token)
+    
+    # Process raw_vocab by decoding tokens and then remove empty tokens
+    vocab = []
+    for token in raw_vocab:
+        try:
+            decoded = tf.compat.as_text(token, vectorizer.encoding)
+            vocab.append(decoded)
+        except Exception:
+            vocab.append('')
+    
+    # Remove empty tokens and duplicates while preserving order
     vocab = [token for token in vocab if token != '']
     seen = set()
     unique_vocab = []
@@ -60,6 +58,11 @@ def uniquify_vocabulary(vocab):
         if token not in seen:
             unique_vocab.append(token)
             seen.add(token)
+    
+    if not unique_vocab:
+        raise ValueError("The vocabulary is empty after processing. "
+                         "Please check your training texts to ensure they are not empty or misformatted.")
+    
     return unique_vocab
 
 def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=64, max_length=100, epochs=10):
@@ -76,8 +79,6 @@ def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=
     
     # Retrieve the vocabulary using our safe helper function
     vocab = safe_get_vocabulary(vectorizer)
-    # Remove duplicates and empty tokens
-    vocab = uniquify_vocabulary(vocab)
     
     # Ensure the directory for saving the vectorizer exists
     os.makedirs(os.path.dirname(VECTORIZER_PATH), exist_ok=True)
@@ -87,7 +88,7 @@ def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=
     
     # Build the model and update the TextVectorization layer's vocabulary
     model = build_model(vocabulary_size, embedding_dim, max_length)
-    # Find the TextVectorization layer in the model and set its vocabulary
+    # Locate the TextVectorization layer in the model and set its vocabulary
     for layer in model.layers:
         if isinstance(layer, tf.keras.layers.TextVectorization):
             layer.set_vocabulary(vocab)
