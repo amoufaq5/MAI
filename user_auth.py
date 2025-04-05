@@ -46,20 +46,21 @@ def change_password(username, new_password):
 def authenticate_user(username, password):
     if not os.path.exists(USERS_FILE):
         return None
-    with open(USERS_FILE, encoding="utf-8") as f:
-        try:
-            users = json.load(f)
-            print("Users loaded:", users)  # Debugging: check the loaded users
-        except json.JSONDecodeError as e:
-            print("Error loading JSON:", e)
-            return None
 
-    # Iterate over each user object
+    try:
+        with open(USERS_FILE, encoding="utf-8") as f:
+            users = json.load(f)
+    except json.JSONDecodeError as e:
+        print("Error loading JSON:", e)
+        return None
+
+    print("Users loaded:", users)  # Debugging to check if it's a list of dictionaries
     for user in users:
-        print("Checking user:", user)  # Debugging: print user details
+        print("Checking user:", user)  # Debugging to check the user object
         if user["username"] == username:
             if bcrypt.checkpw(password.encode(), user["password"].encode()):
                 return user["role"]
     return None
+
 
 
