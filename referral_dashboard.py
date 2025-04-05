@@ -35,7 +35,9 @@ def dashboard():
     top_symptoms = Counter(symptoms).most_common(5)
     top_symptoms_dict = {"labels": [x[0] for x in top_symptoms], "values": [x[1] for x in top_symptoms]}
 
-    return render_template_string(open("dashboard_template.html").read(), data=reversed(data), query=query,
+    with open("dashboard_template.html", encoding="utf-8") as f:
+        html_template = f.read()
+    return render_template_string(html_template, data=reversed(data), query=query,
                                   top_drugs=top_drugs_dict, top_symptoms=top_symptoms_dict)
 
 @app.route("/chat/fetch")
@@ -88,23 +90,28 @@ def manage_users():
                 message = "❌ User not found."
 
     users = list_users()
-    return f"""
-    <html><body style='font-family:sans-serif;'>
-    <h2>Manage Users</h2>
-    <form method='post'>
-        <input name='username' placeholder='Username'>
-        <input name='password' placeholder='Password'>
-        <select name='role'><option value='doctor'>Doctor</option><option value='admin'>Admin</option></select>
-        <button name='action' value='add'>Add User</button>
-    </form><br>
-    <form method='post'>
-        <input name='username' placeholder='Username'>
-        <button name='action' value='delete'>Delete User</button>
-    </form><br>
-    <p>{message}</p>
-    <h3>All Users</h3>
-    <ul>{''.join([f"<li>{u['username']} ({u['role']})</li>" for u in users])}</ul>
-    <a href='/'>← Back</a></body></html>"
+    user_list = "".join([f"<li>{u['username']} ({u['role']})</li>" for u in users])
+    return render_template_string(f"""
+    <!DOCTYPE html>
+    <html><head><title>User Manager</title></head>
+    <body style='font-family:sans-serif;'>
+        <h2>Manage Users</h2>
+        <form method='post'>
+            <input name='username' placeholder='Username'>
+            <input name='password' placeholder='Password'>
+            <select name='role'><option value='doctor'>Doctor</option><option value='admin'>Admin</option></select>
+            <button name='action' value='add'>Add User</button>
+        </form><br>
+        <form method='post'>
+            <input name='username' placeholder='Username'>
+            <button name='action' value='delete'>Delete User</button>
+        </form><br>
+        <p>{message}</p>
+        <h3>All Users</h3>
+        <ul>{user_list}</ul>
+        <a href='/'>&larr; Back</a>
+    </body></html>
+    """)
 
 @app.route("/pdf/<session_id>")
 def download_pdf(session_id):
@@ -124,16 +131,18 @@ def login():
             session["user"] = username
             session["role"] = role
             return redirect("/")
-    return """
-    <html><body style='text-align:center;margin-top:100px;font-family:sans-serif;'>
-    <h2>Login</h2>
-    <form method="post">
-        <input name="username" placeholder="Username"><br><br>
-        <input type="password" name="password" placeholder="Password"><br><br>
-        <button type="submit">Login</button>
-    </form>
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html><head><title>Login</title></head>
+    <body style='text-align:center;margin-top:100px;font-family:sans-serif;'>
+        <h2>Login</h2>
+        <form method="post">
+            <input name="username" placeholder="Username"><br><br>
+            <input type="password" name="password" placeholder="Password"><br><br>
+            <button type="submit">Login</button>
+        </form>
     </body></html>
-    """
+    """)
 
 @app.route("/logout")
 def logout():
@@ -153,18 +162,19 @@ def change_pw():
         else:
             message = "❌ Error changing password."
 
-    return f"""
-    <html><body style='text-align:center;margin-top:100px;font-family:sans-serif;'>
-    <h2>Change Password for {session['user']}</h2>
-    <form method="post">
-        <input type="password" name="new_password" placeholder="New Password">
-        <button type="submit">Change</button>
-    </form>
-    <p>{message}</p>
-    return "<a href='/'>&larr; Back</a>"
-  
+    return render_template_string(f"""
+    <!DOCTYPE html>
+    <html><head><title>Change Password</title></head>
+    <body style='text-align:center;margin-top:100px;font-family:sans-serif;'>
+        <h2>Change Password for {session['user']}</h2>
+        <form method="post">
+            <input type="password" name="new_password" placeholder="New Password">
+            <button type="submit">Change</button>
+        </form>
+        <p>{message}</p>
+        <a href='/'>⟵ Back</a>
     </body></html>
-    """
+    """)
 
 if __name__ == "__main__":
     app.run(port=7000, debug=True)
