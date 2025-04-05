@@ -61,3 +61,10 @@ def load_encoder():
     with open(ENCODER_PATH, 'rb') as f:
         encoder = pickle.load(f)
     return encoder
+
+def load_trained_model():
+    model = tf.keras.models.load_model(MODEL_PATH)
+    vectorizer = load_vectorizer()
+    encoder = load_encoder()
+    return model, vectorizer, encoder
+
