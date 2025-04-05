@@ -6,20 +6,25 @@ MODEL_PATH = 'model/myd_model.h5'
 VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
 def build_model(vocab_size, embedding_dim=64, max_length=100):
+    # Define the vectorization layer (will be manually set with weights later)
+    text_vectorizer = tf.keras.layers.TextVectorization(
+        max_tokens=vocab_size,
+        output_mode='int',
+        output_sequence_length=max_length
+    )
+
+    # Now define the model pipeline
     model = tf.keras.Sequential([
-        tf.keras.layers.Input(shape=(None,), dtype=tf.string, name='text_input'),
-        tf.keras.layers.TextVectorization(
-            max_tokens=vocab_size,
-            output_mode='int',
-            output_sequence_length=max_length
-        ),
+        text_vectorizer,
         tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim, mask_zero=True),
         tf.keras.layers.GlobalAveragePooling1D(),
         tf.keras.layers.Dense(64, activation='relu'),
-        tf.keras.layers.Dense(2, activation='softmax')  # 2 output classes
+        tf.keras.layers.Dense(2, activation='softmax')
     ])
+
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
+
 
 def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, max_length=100, epochs=5):
     # Create and adapt the text vectorization layer
