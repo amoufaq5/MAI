@@ -42,3 +42,16 @@ def change_password(username, new_password):
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=2)
     return updated
+
+def authenticate_user(username, password):
+    if not os.path.exists(USERS_FILE):
+        return None
+    with open(USERS_FILE, encoding="utf-8") as f:
+        users = json.load(f)
+    print("Users loaded:", users)  # Debug print
+    for user in users:
+        print("Checking user:", user)  # Debug print
+        if user["username"] == username:
+            if bcrypt.checkpw(password.encode(), user["password"].encode()):
+                return user["role"]
+    return None
