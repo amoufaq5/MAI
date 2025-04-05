@@ -1,173 +1,77 @@
-from session_logger import start_new_session, log_message, log_final_recommendation
-from model import predict_drug
-from response_templates import make_human_response
-from langdetect import detect
-from user_profile import save_user_profile
-from feedback_collector import store_feedback
-from fhir_exporter import generate_fhir_bundle
-from referral_logger import log_referral, send_referral_email
-from referral_pdf import generate_referral_pdf
-import json
-import os
-import requests
-
-DANGER_KEYWORDS = [
-    "bleeding", "seizure", "vomiting blood", "chest pain", "shortness of breath",
-    "نزيف", "ألم في الصدر", "نوبات", "ضيق التنفس"
-]
+from disease_model import predict_disease
+from referral_logger import log_referral, log_outbreak, save_user_profile
+import pandas as pd
 
 class ChatBot:
-    def __init__(self, model, vectorizer, encoder, df):
-        self.model = model
-        self.vectorizer = vectorizer
-        self.encoder = encoder
-        self.df = df
-
-        self.questions_en = [
-            "Please provide your age and appearance.",
-            "Is it you or someone else experiencing symptoms?",
-            "Any current medications?",
-            "Any extra medicines or supplements?",
-            "How long has this been going on?",
-            "Any relevant medical history?",
-            "What symptoms are you experiencing?",
-            "Are there any danger symptoms?"
+    def __init__(self, username="guest"):
+        self.username = username
+        self.questions = [
+            "1. Please describe your age and appearance.",
+            "2. Is this for you or someone else?",
+            "3. Are you taking any medication?",
+            "4. Any extra medicines or supplements?",
+            "5. How long have you had the symptoms?",
+            "6. Any relevant medical history?",
+            "7. What symptoms are you experiencing?",
+            "8. Are there any danger symptoms?"
         ]
-
-        self.questions_ar = [
-            "يرجى وصف عمرك ومظهرك.",
-            "هل الأعراض لك أم لشخص آخر؟",
-            "هل تأخذ أي أدوية حالياً؟",
-            "هل تستخدم أدوية إضافية أو مكملات؟",
-            "منذ متى بدأت هذه الأعراض؟",
-            "هل لديك تاريخ مرضي مهم؟",
-            "ما الأعراض التي تعاني منها؟",
-            "هل هناك أعراض خطيرة؟"
-        ]
-
-        self.questions = self.questions_en  # default
-        self.current_index = 0
-        self.collected = []
+        self.index = 0
+        self.responses = []
         self.finished = False
-        self.feedback_stage = False
-        self.waiting_for_feedback = False
-        self.corrected_drug = None
-        self.lang = "en"
-        self.session_id, self.log_file = start_new_session()
-        self.last_prediction = None
-        self.last_input_text = ""
-
-    def handle_message(self, message):
-        log_message(self.log_file, "user", message)
-
-        try:
-            self.lang = detect(message)
-        except:
-            self.lang = "en"
-
-        self.questions = self.questions_ar if self.lang == "ar" else self.questions_en
-
-        if self.finished and not self.waiting_for_feedback:
-            self.reset()
-            response = "ابدأ من جديد بكتابة 'start'" if self.lang == "ar" else "Type 'start' to begin a new diagnosis."
-            log_message(self.log_file, "bot", response)
-            return response
-
-        if message.lower() == 'start':
-            self.reset()
-            self.questions = self.questions_ar if self.lang == "ar" else self.questions_en
-            response = self.questions[0]
-            log_message(self.log_file, "bot", response)
-            return response
-
-        if self.waiting_for_feedback:
-            if message.strip().lower() in ["yes", "نعم"]:
-                store_feedback(self.session_id, self.last_input_text, self.last_prediction, self.last_prediction, "positive")
-                response = "Thank you for confirming!" if self.lang == "en" else "شكراً لتأكيدك!"
-                self.waiting_for_feedback = False
-                log_message(self.log_file, "bot", response)
-                return response
-            else:
-                self.feedback_stage = True
-                self.waiting_for_feedback = False
-                response = "What drug did you end up using instead?" if self.lang == "en" else "ما الدواء الذي استخدمته بدلاً من ذلك؟"
-                log_message(self.log_file, "bot", response)
-                return response
-
-        if self.feedback_stage:
-            self.corrected_drug = message.strip()
-            store_feedback(self.session_id, self.last_input_text, self.last_prediction, self.corrected_drug, "correction")
-            self.feedback_stage = False
-            response = "Thanks! I've logged your correction to improve future results." if self.lang == "en" else "شكراً! تم تسجيل المعلومة لتحسين النتائج مستقبلاً."
-            log_message(self.log_file, "bot", response)
-            return response
-
-        if self.current_index < len(self.questions):
-            self.collected.append(message)
-            self.current_index += 1
-
-        if self.current_index < len(self.questions):
-            response = self.questions[self.current_index]
-            log_message(self.log_file, "bot", response)
-            return response
-        else:
-            full_input = " ".join(self.collected)
-            drug, confidence, side_effects = predict_drug(
-                full_input, self.model, self.vectorizer, self.encoder, self.df
-            )
-            self.finished = True
-            self.waiting_for_feedback = True
-            self.last_prediction = drug
-            self.last_input_text = full_input
-
-            save_user_profile(self.session_id, self.collected, self.lang)
-            log_final_recommendation(self.log_file, drug, confidence, side_effects)
-
-            profile_data = {
-                "age_appearance": self.collected[0],
-                "for_whom": self.collected[1],
-                "medications": self.collected[2],
-                "extras": self.collected[3],
-                "duration": self.collected[4],
-                "history": self.collected[5],
-                "symptoms": self.collected[6],
-                "danger_signs": self.collected[7]
-            }
-
-            bundle = generate_fhir_bundle(self.session_id, profile_data, {
-                "drug": drug,
-                "confidence": confidence,
-                "side_effects": side_effects
-            }, self.lang)
-
-            os.makedirs("ehr_exports", exist_ok=True)
-            with open(f"ehr_exports/fhir_bundle_{self.session_id}.json", "w", encoding="utf-8") as f:
-                json.dump(bundle, f, indent=2, ensure_ascii=False)
-
-            referral_msg = ""
-            try:
-                res = requests.post("http://localhost:6000/ehr/receive", json=bundle)
-                if res.ok and res.json().get("referral"):
-                    # Log + Notify + PDF
-                    log_referral(self.session_id, profile_data["danger_signs"], drug, confidence)
-                    send_referral_email(self.session_id, drug, profile_data["danger_signs"])
-                    generate_referral_pdf(self.session_id, profile_data, drug, confidence)
-                    referral_msg = "\n🚨 Your symptoms require urgent medical attention. Please consult a doctor immediately."
-            except Exception as e:
-                print("⚠️ Failed to send to mock EHR:", e)
-
-            response = make_human_response(drug, confidence, side_effects, lang=self.lang) + referral_msg
-            response += "\n\nDid this help you? (yes/no)" if self.lang == "en" else "\n\nهل ساعدك هذا؟ (نعم / لا)"
-            log_message(self.log_file, "bot", response)
-            return response
+        self.df = pd.read_csv("data.csv")
 
     def reset(self):
-        self.collected = []
-        self.current_index = 0
+        self.index = 0
+        self.responses = []
         self.finished = False
-        self.feedback_stage = False
-        self.waiting_for_feedback = False
-        self.corrected_drug = None
-        self.last_prediction = None
-        self.last_input_text = ""
-        self.session_id, self.log_file = start_new_session()
+
+    def find_drug(self, disease):
+        match = self.df[self.df["disease"].str.lower() == disease.lower()]
+        if not match.empty:
+            otc = match[match["drug_type"].str.upper() == "OTC"]
+            if not otc.empty:
+                return otc.iloc[0]["drug name"], "OTC"
+            else:
+                return match.iloc[0]["drug name"], "RX"
+        return None, None
+
+    def handle_message(self, message):
+        if message.lower() == "start":
+            self.reset()
+            return self.questions[self.index]
+
+        if self.finished:
+            return "Type 'start' to begin a new diagnosis."
+
+        self.responses.append(message)
+        self.index += 1
+
+        if self.index < len(self.questions):
+            return self.questions[self.index]
+        else:
+            full_input = " ".join(self.responses)
+            disease, confidence = predict_disease(full_input)
+            drug, dtype = self.find_drug(disease)
+
+            log_outbreak(disease)
+            save_user_profile(self.username, full_input, disease)
+
+            self.finished = True
+
+            if dtype == "OTC":
+                return (
+                    f"🧠 Most likely condition: {disease} ({confidence}%)\n"
+                    f"💊 You can take: **{drug}** (Over-the-counter)"
+                )
+            elif dtype == "RX":
+                log_referral(self.username, disease, full_input, drug)
+                return (
+                    f"🧠 Most likely condition: {disease} ({confidence}%)\n"
+                    f"⚠️ This drug requires a prescription: **{drug}**\n"
+                    f"📩 Your case has been referred to a doctor with your notes."
+                )
+            else:
+                return (
+                    f"🧠 Most likely condition: {disease} ({confidence}%)\n"
+                    f"⚠️ No suitable drug was found in our records. Please consult a healthcare provider."
+                )
