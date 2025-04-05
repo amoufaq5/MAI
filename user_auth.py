@@ -48,10 +48,11 @@ def authenticate_user(username, password):
         return None
     with open(USERS_FILE, encoding="utf-8") as f:
         users = json.load(f)
-    print("Users loaded:", users)  # Debug print
+    print("Users loaded:", users)  # Debug print to ensure it's loaded as a list of dictionaries
     for user in users:
-        print("Checking user:", user)  # Debug print
+        print("Checking user:", user)  # Debug print to see each user dictionary
         if user["username"] == username:
             if bcrypt.checkpw(password.encode(), user["password"].encode()):
                 return user["role"]
     return None
+
