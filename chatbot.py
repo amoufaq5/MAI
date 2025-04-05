@@ -7,6 +7,7 @@ from feedback_collector import store_feedback
 from fhir_exporter import generate_fhir_bundle
 import json
 import os
+import requests
 
 class ChatBot:
     def __init__(self, model, vectorizer, encoder, df):
@@ -147,6 +148,12 @@ class ChatBot:
             os.makedirs("ehr_exports", exist_ok=True)
             with open(f"ehr_exports/fhir_bundle_{self.session_id}.json", "w", encoding="utf-8") as f:
                 json.dump(bundle, f, indent=2, ensure_ascii=False)
+
+            # Send bundle to mock EHR server
+            try:
+                requests.post("http://localhost:6000/ehr/receive", json=bundle)
+            except Exception as e:
+                print("⚠️ Failed to send to mock EHR:", e)
 
             response = make_human_response(drug, confidence, side_effects, lang=self.lang)
             response += "\n\nDid this help you? (yes/no)" if self.lang == "en" else "\n\nهل ساعدك هذا؟ (نعم / لا)"
