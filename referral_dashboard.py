@@ -2,6 +2,7 @@ from flask import Flask, render_template_string, request, send_file, redirect, u
 import json
 import os
 import pandas as pd
+from collections import Counter
 from user_auth import authenticate_user, change_password, init_user_db
 
 app = Flask(__name__)
@@ -14,6 +15,7 @@ TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <title>MYD Referrals Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: Arial; margin: 40px; background: #f8f9fa; }
         h1 { color: #333; }
@@ -24,6 +26,7 @@ TEMPLATE = """
         a { color: #007bff; text-decoration: none; }
         a:hover { text-decoration: underline; }
         .topbar { display: flex; justify-content: space-between; align-items: center; }
+        .charts { display: flex; gap: 40px; margin-top: 40px; }
     </style>
 </head>
 <body>
@@ -37,6 +40,18 @@ TEMPLATE = """
             <a href="/logout" style="margin-left: 20px;">Logout</a>
         </form>
     </div>
+
+    <div class="charts">
+        <div>
+            <h3>Top Drugs</h3>
+            <canvas id="drugChart" width="300" height="300"></canvas>
+        </div>
+        <div>
+            <h3>Top Symptoms</h3>
+            <canvas id="symptomChart" width="300" height="300"></canvas>
+        </div>
+    </div>
+
     <table>
         <thead>
             <tr>
@@ -63,35 +78,27 @@ TEMPLATE = """
             {% endfor %}
         </tbody>
     </table>
-</body>
-</html>
-"""
 
-LOGIN_TEMPLATE = """
-<!DOCTYPE html>
-<html><head><title>Login</title></head>
-<body style="font-family:sans-serif; text-align:center; margin-top:100px">
-<h2>Login</h2>
-<form method="post">
-    <input name="username" placeholder="Username"><br><br>
-    <input type="password" name="password" placeholder="Password"><br><br>
-    <button type="submit">Login</button>
-</form>
-</body>
-</html>
-"""
+    <script>
+    const drugData = {{ top_drugs | safe }};
+    const symptomData = {{ top_symptoms | safe }};
 
-CHANGE_PASSWORD_TEMPLATE = """
-<!DOCTYPE html>
-<html><head><title>Change Password</title></head>
-<body style="font-family:sans-serif; text-align:center; margin-top:100px">
-<h2>Change Password for {{ user }}</h2>
-<form method="post">
-    <input type="password" name="new_password" placeholder="New Password">
-    <button type="submit">Change</button>
-</form>
-{% if message %}<p>{{ message }}</p>{% endif %}
-<a href="/">⬅ Back</a>
+    new Chart(document.getElementById('drugChart'), {
+        type: 'bar',
+        data: {
+            labels: drugData.labels,
+            datasets: [{ label: 'Top Drugs', data: drugData.values, backgroundColor: '#007bff' }]
+        }
+    });
+
+    new Chart(document.getElementById('symptomChart'), {
+        type: 'bar',
+        data: {
+            labels: symptomData.labels,
+            datasets: [{ label: 'Top Symptoms', data: symptomData.values, backgroundColor: '#28a745' }]
+        }
+    });
+    </script>
 </body>
 </html>
 """
@@ -100,7 +107,7 @@ CHANGE_PASSWORD_TEMPLATE = """
 def dashboard():
     if not session.get("authenticated"):
         return redirect("/login")
-    
+
     query = request.args.get("q", "").strip().lower()
     with open("referrals.json", encoding="utf-8") as f:
         data = json.load(f)
@@ -108,7 +115,26 @@ def dashboard():
     if query:
         data = [d for d in data if query in d["symptoms"].lower() or query in d["recommended_drug"].lower()]
 
-    return render_template_string(TEMPLATE, data=reversed(data), query=query)
+    # Compute top drugs
+    drug_counter = Counter(d["recommended_drug"] for d in data)
+    top_drugs = drug_counter.most_common(5)
+    top_drugs_dict = {
+        "labels": [item[0] for item in top_drugs],
+        "values": [item[1] for item in top_drugs]
+    }
+
+    # Compute top symptoms (token-based)
+    all_symptoms = " ".join(d["symptoms"] for d in data).lower().replace(",", " ").split()
+    symptom_counter = Counter(all_symptoms)
+    common_symptoms = [s for s in symptom_counter.items() if len(s[0]) > 3]  # filter stopwords
+    top_symptoms = sorted(common_symptoms, key=lambda x: x[1], reverse=True)[:5]
+    top_symptoms_dict = {
+        "labels": [item[0] for item in top_symptoms],
+        "values": [item[1] for item in top_symptoms]
+    }
+
+    return render_template_string(TEMPLATE, data=reversed(data), query=query,
+                                  top_drugs=top_drugs_dict, top_symptoms=top_symptoms_dict)
 
 @app.route("/pdf/<session_id>")
 def download_pdf(session_id):
@@ -158,6 +184,35 @@ def change_pw():
             message = "❌ Error changing password."
 
     return render_template_string(CHANGE_PASSWORD_TEMPLATE, user=session["user"], message=message)
+
+LOGIN_TEMPLATE = """
+<!DOCTYPE html>
+<html><head><title>Login</title></head>
+<body style="font-family:sans-serif; text-align:center; margin-top:100px">
+<h2>Login</h2>
+<form method="post">
+    <input name="username" placeholder="Username"><br><br>
+    <input type="password" name="password" placeholder="Password"><br><br>
+    <button type="submit">Login</button>
+</form>
+</body>
+</html>
+"""
+
+CHANGE_PASSWORD_TEMPLATE = """
+<!DOCTYPE html>
+<html><head><title>Change Password</title></head>
+<body style="font-family:sans-serif; text-align:center; margin-top:100px">
+<h2>Change Password for {{ user }}</h2>
+<form method="post">
+    <input type="password" name="new_password" placeholder="New Password">
+    <button type="submit">Change</button>
+</form>
+{% if message %}<p>{{ message }}</p>{% endif %}
+<a href="/">⬅ Back</a>
+</body>
+</html>
+"""
 
 if __name__ == "__main__":
     app.run(port=7000, debug=True)
