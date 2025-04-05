@@ -4,16 +4,16 @@ import hashlib
 
 USER_FILE = "users.json"
 
-# Create initial admin if file doesn't exist
+# Create initial users if file doesn't exist
 def init_user_db():
     if not os.path.exists(USER_FILE):
         default_user = {
             "admin": {
-                "password": hash_password("admin123"),
+                "password": "1b6adbe6d85d43cba3fa6932a24cd3f9c8ed8a2c36b64641ed6b6828f50f57e1",
                 "role": "admin"
             },
             "doctor": {
-                "password": hash_password("doctor123"),
+                "password": "e7e0fcfbe8340422f59bb04d90e6c6c2a536ab0f11d3c0b96b01a51772f1f6d8",
                 "role": "doctor"
             }
         }
@@ -26,6 +26,8 @@ def hash_password(password):
 
 
 def authenticate_user(username, password):
+    if not os.path.exists(USER_FILE):
+        return None
     with open(USER_FILE, encoding="utf-8") as f:
         users = json.load(f)
     user = users.get(username)
@@ -35,6 +37,8 @@ def authenticate_user(username, password):
 
 
 def change_password(username, new_password):
+    if not os.path.exists(USER_FILE):
+        return False
     with open(USER_FILE, encoding="utf-8") as f:
         users = json.load(f)
     if username in users:
