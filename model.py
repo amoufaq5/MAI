@@ -7,12 +7,14 @@ VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
 def build_model(vocab_size, embedding_dim=64, max_length=100):
     model = tf.keras.Sequential([
-        # Input layer receives raw text strings
+        # Input: raw text strings
         tf.keras.layers.Input(shape=(None,), dtype=tf.string, name='text_input'),
-        # TextVectorization converts text to integer tokens
-        tf.keras.layers.TextVectorization(max_tokens=vocab_size,
-                                          output_mode='int',
-                                          output_sequence_length=max_length),
+        # Convert text to integer tokens
+        tf.keras.layers.TextVectorization(
+            max_tokens=vocab_size,
+            output_mode='int',
+            output_sequence_length=max_length
+        ),
         tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim, mask_zero=True),
         tf.keras.layers.GlobalAveragePooling1D(),
         tf.keras.layers.Dense(64, activation='relu'),
@@ -21,34 +23,52 @@ def build_model(vocab_size, embedding_dim=64, max_length=100):
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
 
+def safe_get_vocabulary(vectorizer):
+    """
+    Attempts to retrieve the vocabulary from the TextVectorization layer.
+    If a UnicodeDecodeError occurs, falls back to extracting the vocabulary
+    from the underlying lookup table.
+    """
+    try:
+        # Try to get the vocabulary normally
+        raw_vocab = vectorizer.get_vocabulary()
+        vocab = []
+        for token in raw_vocab:
+            try:
+                vocab.append(tf.compat.as_text(token, vectorizer.encoding))
+            except Exception:
+                vocab.append('')
+        return vocab
+    except UnicodeDecodeError:
+        # Fallback: use the underlying lookup table to export the keys
+        table = vectorizer._lookup_layer._table  # Access the private table
+        keys_tensor, _ = table.export()  # export returns (keys, values)
+        raw_vocab = keys_tensor.numpy().tolist()
+        vocab = []
+        for token in raw_vocab:
+            try:
+                if isinstance(token, bytes):
+                    vocab.append(token.decode('utf-8', errors='ignore'))
+                else:
+                    vocab.append(token)
+            except Exception:
+                vocab.append('')
+        return vocab
+
 def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, max_length=100, epochs=10):
     # Ensure all texts are strings
     train_texts = [str(t) for t in train_texts]
     
     # Create and adapt the TextVectorization layer on the training texts
-    vectorizer = tf.keras.layers.TextVectorization(max_tokens=vocab_size,
-                                                   output_mode='int',
-                                                   output_sequence_length=max_length)
+    vectorizer = tf.keras.layers.TextVectorization(
+        max_tokens=vocab_size,
+        output_mode='int',
+        output_sequence_length=max_length
+    )
     vectorizer.adapt(train_texts)
     
-    # Try to extract the vocabulary using get_vocabulary()
-    try:
-        raw_vocab = vectorizer.get_vocabulary()
-    except UnicodeDecodeError:
-        # Fallback: try to access the internal _vocab attribute directly
-        raw_vocab = vectorizer._lookup_layer._vocab
-
-    # Process the raw vocabulary safely
-    vocab = []
-    for token in raw_vocab:
-        if isinstance(token, bytes):
-            try:
-                decoded = token.decode('utf-8', errors='ignore')
-            except Exception:
-                decoded = ''
-            vocab.append(decoded)
-        else:
-            vocab.append(token)
+    # Retrieve the vocabulary using our safe helper
+    vocab = safe_get_vocabulary(vectorizer)
     
     # Save the vectorizer configuration and vocabulary
     with open(VECTORIZER_PATH, 'wb') as f:
