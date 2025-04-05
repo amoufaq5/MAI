@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 # Use the new Keras format or SavedModel directory
-MODEL_PATH = 'model/myd_model.keras'  # You can also use: 'model/myd_model'
+MODEL_PATH = 'model/myd_model'  # ✅ Will save as a folder using SavedModel
 VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
 
@@ -51,7 +51,8 @@ def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, m
 
     # Save model (use .keras or SavedModel format)
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-    model.save(MODEL_PATH)
+    model.save(MODEL_PATH, save_format='tf')  # Also works fine and safe
+
 
     print(f"✅ Model trained and saved to: {MODEL_PATH}")
     return model, text_vectorizer
