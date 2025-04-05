@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 from sklearn.preprocessing import LabelEncoder
 
-MODEL_PATH = 'model/myd_model.keras'
+MODEL_PATH = 'model/myd_model'  # ✅ Also safe — saves as TensorFlow SavedModel
 VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 ENCODER_PATH = 'model/label_encoder.pkl'
 
@@ -45,7 +45,7 @@ def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, m
     model = build_model(text_vectorizer, vocab_size, embedding_dim, max_length, num_classes)
 
     model.fit(np.array(train_texts), np.array(train_labels_encoded), epochs=epochs, validation_split=0.2)
-    model.save(MODEL_PATH, save_format='keras')
+    model.save(MODEL_PATH)  # No need for save_format anymore
 
     print("✅ Model trained and saved.")
     return model, text_vectorizer, encoder
