@@ -2,7 +2,7 @@ import tensorflow as tf
 import os
 import pickle
 
-MODEL_PATH = 'model/myd_model.h5'
+MODEL_PATH = 'model/myd_model.keras'
 VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
 def build_model(text_vectorizer, vocab_size, embedding_dim=64, max_length=100):
