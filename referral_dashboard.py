@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from collections import Counter
 from user_auth import authenticate_user, change_password, init_user_db
+from user_manager import list_users, add_user, delete_user
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"
@@ -17,16 +18,17 @@ TEMPLATE = """
     <title>MYD Referrals Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: Arial; margin: 40px; background: #f8f9fa; }
-        h1 { color: #333; }
+        body { font-family: Arial; margin: 40px; background: #121212; color: #f8f8f8; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 10px; border: 1px solid #ccc; text-align: left; }
+        th, td { padding: 10px; border: 1px solid #444; text-align: left; }
         th { background: #007bff; color: white; }
-        tr:nth-child(even) { background: #f2f2f2; }
-        a { color: #007bff; text-decoration: none; }
+        tr:nth-child(even) { background: #222; }
+        a { color: #0af; text-decoration: none; }
         a:hover { text-decoration: underline; }
         .topbar { display: flex; justify-content: space-between; align-items: center; }
         .charts { display: flex; gap: 40px; margin-top: 40px; }
+        button { background: #007bff; color: white; border: none; padding: 6px 12px; cursor: pointer; }
+        button:hover { background: #0056b3; }
     </style>
 </head>
 <body>
@@ -35,7 +37,10 @@ TEMPLATE = """
         <form method="get" action="/">
             <input type="text" name="q" placeholder="Search symptoms or drug" value="{{ query }}">
             <button type="submit">Search</button>
+            {% if session['role'] == 'admin' %}
             <a href="/export" style="margin-left: 20px;">Export to Excel</a>
+            <a href="/users" style="margin-left: 20px;">Manage Users</a>
+            {% endif %}
             <a href="/change-password" style="margin-left: 20px;">Change Password</a>
             <a href="/logout" style="margin-left: 20px;">Logout</a>
         </form>
@@ -115,7 +120,6 @@ def dashboard():
     if query:
         data = [d for d in data if query in d["symptoms"].lower() or query in d["recommended_drug"].lower()]
 
-    # Compute top drugs
     drug_counter = Counter(d["recommended_drug"] for d in data)
     top_drugs = drug_counter.most_common(5)
     top_drugs_dict = {
@@ -123,10 +127,9 @@ def dashboard():
         "values": [item[1] for item in top_drugs]
     }
 
-    # Compute top symptoms (token-based)
     all_symptoms = " ".join(d["symptoms"] for d in data).lower().replace(",", " ").split()
     symptom_counter = Counter(all_symptoms)
-    common_symptoms = [s for s in symptom_counter.items() if len(s[0]) > 3]  # filter stopwords
+    common_symptoms = [s for s in symptom_counter.items() if len(s[0]) > 3]
     top_symptoms = sorted(common_symptoms, key=lambda x: x[1], reverse=True)[:5]
     top_symptoms_dict = {
         "labels": [item[0] for item in top_symptoms],
@@ -136,21 +139,60 @@ def dashboard():
     return render_template_string(TEMPLATE, data=reversed(data), query=query,
                                   top_drugs=top_drugs_dict, top_symptoms=top_symptoms_dict)
 
-@app.route("/pdf/<session_id>")
-def download_pdf(session_id):
-    pdf_path = f"referral_letters/referral_{session_id}.pdf"
-    if os.path.exists(pdf_path):
-        return send_file(pdf_path, as_attachment=True)
-    return "PDF not found", 404
+@app.route("/users", methods=["GET", "POST"])
+def manage_users():
+    if session.get("role") != "admin":
+        return "Unauthorized", 403
+
+    message = ""
+    if request.method == "POST":
+        if request.form.get("action") == "add":
+            if add_user(request.form["username"], request.form["password"], request.form["role"]):
+                message = "✅ User added."
+            else:
+                message = "❌ Username already exists."
+        elif request.form.get("action") == "delete":
+            if delete_user(request.form["username"]):
+                message = "🗑️ User deleted."
+            else:
+                message = "❌ User not found."
+
+    users = list_users()
+    return f"""
+    <html><body style='font-family:sans-serif;'>
+    <h2>Manage Users</h2>
+    <form method='post'>
+        <input name='username' placeholder='Username'>
+        <input name='password' placeholder='Password'>
+        <select name='role'><option value='doctor'>Doctor</option><option value='admin'>Admin</option></select>
+        <button name='action' value='add'>Add User</button>
+    </form><br>
+    <form method='post'>
+        <input name='username' placeholder='Username'>
+        <button name='action' value='delete'>Delete User</button>
+    </form><br>
+    <p>{message}</p>
+    <h3>All Users</h3>
+    <ul>{''.join([f"<li>{u['username']} ({u['role']})</li>" for u in users])}</ul>
+    <a href='/'>⬅ Back</a></body></html>"
 
 @app.route("/export")
 def export_excel():
+    if session.get("role") != "admin":
+        return "Unauthorized", 403
     with open("referrals.json", encoding="utf-8") as f:
         data = json.load(f)
     df = pd.DataFrame(data)
     file_path = "referrals_export.xlsx"
     df.to_excel(file_path, index=False)
     return send_file(file_path, as_attachment=True)
+
+@app.route("/pdf/<session_id>")
+def download_pdf(session_id):
+    pdf_path = f"referral_letters/referral_{session_id}.pdf"
+    if os.path.exists(pdf_path):
+        return send_file(pdf_path, as_attachment=True)
+    return "PDF not found", 404
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
