@@ -3,8 +3,12 @@ from model import load_trained_model
 from chatbot import ChatBot
 
 app = Flask(__name__)
+from data_loader import load_dataset
+...
+
 model, vectorizer, encoder = load_trained_model()
-chatbot = ChatBot(model, vectorizer, encoder)
+df = load_dataset('data/dataset.csv')  # Make sure this is the correct path
+chatbot = ChatBot(model, vectorizer, encoder, df)
 
 @app.route('/')
 def index():
