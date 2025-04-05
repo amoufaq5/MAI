@@ -161,7 +161,7 @@ def change_pw():
         <button type="submit">Change</button>
     </form>
     <p>{message}</p>
-    <a href='/'>← Back</a>
+    return "<a href='/'>&larr; Back</a>"
     </body></html>
     """
 
