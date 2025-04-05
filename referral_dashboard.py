@@ -8,6 +8,7 @@ from user_manager import list_users, add_user, delete_user
 from flask_mail import Mail, Message
 import uuid
 from datetime import datetime
+from user_manager import add_user, list_users, delete_user
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"
