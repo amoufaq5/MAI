@@ -24,6 +24,10 @@ class ChatBot:
 
 
     def handle_message(self, message):
+        log_message(self.log_file, "user", message)
+...
+log_message(self.log_file, "bot", response)
+
         if self.finished:
             self.reset()
             return "Type 'start' to begin a new diagnosis."
