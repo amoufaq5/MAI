@@ -7,14 +7,14 @@ VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
 def build_model(vocab_size, embedding_dim=64, max_length=100):
     model = tf.keras.Sequential([
-        # The input layer receives raw text strings
+        # Input: raw text strings
         tf.keras.layers.Input(shape=(None,), dtype=tf.string, name='text_input'),
-        # TextVectorization converts text to integer tokens
+        # Convert text to integer tokens
         tf.keras.layers.TextVectorization(max_tokens=vocab_size, output_mode='int', output_sequence_length=max_length),
         tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim, mask_zero=True),
         tf.keras.layers.GlobalAveragePooling1D(),
         tf.keras.layers.Dense(64, activation='relu'),
-        tf.keras.layers.Dense(2, activation='softmax')  # Two classes: 0 = OTC safe, 1 = Refer doctor
+        tf.keras.layers.Dense(2, activation='softmax')  # 0 = OTC safe, 1 = Refer doctor
     ])
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
@@ -23,17 +23,26 @@ def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, m
     # Ensure all texts are strings
     train_texts = [str(t) for t in train_texts]
     
-    # Create and adapt the TextVectorization layer on the training texts
+    # Create and adapt the TextVectorization layer on training texts
     vectorizer = tf.keras.layers.TextVectorization(max_tokens=vocab_size, output_mode='int', output_sequence_length=max_length)
     vectorizer.adapt(train_texts)
     
-    # Extract vocabulary and safely decode tokens if needed
-    raw_vocab = vectorizer.get_vocabulary()
+    # Attempt to extract the vocabulary
+    try:
+        raw_vocab = vectorizer.get_vocabulary()
+    except UnicodeDecodeError:
+        # Fall back to the internal vocabulary if decoding fails
+        raw_vocab = vectorizer._lookup_layer.vocabulary
+    
+    # Process the raw vocabulary safely
     vocab = []
     for token in raw_vocab:
         if isinstance(token, bytes):
-            # Decode using UTF-8 and ignore errors
-            vocab.append(token.decode('utf-8', errors='ignore'))
+            try:
+                decoded = token.decode('utf-8', errors='ignore')
+            except Exception:
+                decoded = ''
+            vocab.append(decoded)
         else:
             vocab.append(token)
     
@@ -54,7 +63,7 @@ def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, m
     return model, vectorizer
 
 def load_vectorizer():
-    # Load the vectorizer configuration and vocabulary
+    # Load configuration and vocabulary from file
     with open(VECTORIZER_PATH, 'rb') as f:
         config, vocab = pickle.load(f)
     vectorizer = tf.keras.layers.TextVectorization.from_config(config)
@@ -68,7 +77,7 @@ def load_trained_model():
     return model, vectorizer
 
 def predict_diagnosis(input_text, model, vectorizer):
-    # Given an input text, predict whether OTC is safe or a referral is needed.
+    # Predict based on the input text
     prediction = model.predict([input_text])
     predicted_class = prediction.argmax(axis=-1)[0]
     return predicted_class, prediction[0]
