@@ -4,7 +4,8 @@ def load_dataset(csv_file_path):
     # Load CSV dataset (ensure your CSV file has columns like disease, symptoms, interactions, overview, drug type, side effects)
     df = pd.read_csv(csv_file_path)
     # Filter rows to include only OTC data (assuming 'drug type' indicates OTC in uppercase)
-    df_otc = df[df['drug type'].str.upper() == 'OTC']
+    df_otc = df[df['Drug Type'].str.upper() == 'OTC']
+
     return df_otc
 
 def preprocess_data(df):
