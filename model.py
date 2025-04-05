@@ -9,8 +9,9 @@ def build_model(vocabulary_size, embedding_dim=64, max_length=100):
     model = tf.keras.Sequential([
         # Input layer: each sample is a single string (scalar)
         tf.keras.layers.Input(shape=(), dtype=tf.string, name='text_input'),
-        # TextVectorization converts text to integer tokens
+        # TextVectorization layer with explicit standardization to remove punctuation and lowercase text.
         tf.keras.layers.TextVectorization(
+            standardize="lower_and_strip_punctuation",
             max_tokens=vocabulary_size,
             output_mode='int',
             output_sequence_length=max_length
@@ -26,7 +27,7 @@ def build_model(vocabulary_size, embedding_dim=64, max_length=100):
 def safe_get_vocabulary(vectorizer):
     """
     Attempts to retrieve and process the vocabulary from the TextVectorization layer.
-    If the resulting vocabulary is empty, raises an error to alert you to check your training texts.
+    If the resulting vocabulary is empty, raises an error.
     """
     try:
         raw_vocab = vectorizer.get_vocabulary()
@@ -63,6 +64,7 @@ def safe_get_vocabulary(vectorizer):
         raise ValueError("The vocabulary is empty after processing. "
                          "Please check your training texts to ensure they are not empty or misformatted.")
     
+    print("Sample vocabulary tokens:", unique_vocab[:10])
     return unique_vocab
 
 def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=64, max_length=100, epochs=10):
@@ -71,6 +73,7 @@ def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=
     
     # Create and adapt the TextVectorization layer on the training texts
     vectorizer = tf.keras.layers.TextVectorization(
+        standardize="lower_and_strip_punctuation",
         max_tokens=vocabulary_size,
         output_mode='int',
         output_sequence_length=max_length
@@ -86,9 +89,9 @@ def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=
     with open(VECTORIZER_PATH, 'wb') as f:
         pickle.dump((vectorizer.get_config(), vocab), f)
     
-    # Build the model and update the TextVectorization layer's vocabulary
+    # Build the model and update the TextVectorization layer's vocabulary.
     model = build_model(vocabulary_size, embedding_dim, max_length)
-    # Locate the TextVectorization layer in the model and set its vocabulary
+    # Find the TextVectorization layer in the model and set its vocabulary
     for layer in model.layers:
         if isinstance(layer, tf.keras.layers.TextVectorization):
             layer.set_vocabulary(vocab)
