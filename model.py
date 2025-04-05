@@ -7,7 +7,7 @@ VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
 def build_model(vocabulary_size, embedding_dim=64, max_length=100):
     model = tf.keras.Sequential([
-        # Input layer: each sample is a single string, so shape=() (scalar)
+        # Input layer: each sample is a single string (scalar)
         tf.keras.layers.Input(shape=(), dtype=tf.string, name='text_input'),
         # TextVectorization converts text to integer tokens
         tf.keras.layers.TextVectorization(
@@ -50,6 +50,18 @@ def safe_get_vocabulary(vectorizer):
             vocab.append(token)
         return vocab
 
+def uniquify_vocabulary(vocab):
+    """Remove empty strings and duplicates while preserving order."""
+    # Remove empty tokens
+    vocab = [token for token in vocab if token != '']
+    seen = set()
+    unique_vocab = []
+    for token in vocab:
+        if token not in seen:
+            unique_vocab.append(token)
+            seen.add(token)
+    return unique_vocab
+
 def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=64, max_length=100, epochs=10):
     # Ensure all texts are strings
     train_texts = [str(t) for t in train_texts]
@@ -64,6 +76,8 @@ def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=
     
     # Retrieve the vocabulary using our safe helper function
     vocab = safe_get_vocabulary(vectorizer)
+    # Remove duplicates and empty tokens
+    vocab = uniquify_vocabulary(vocab)
     
     # Ensure the directory for saving the vectorizer exists
     os.makedirs(os.path.dirname(VECTORIZER_PATH), exist_ok=True)
@@ -71,10 +85,9 @@ def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=
     with open(VECTORIZER_PATH, 'wb') as f:
         pickle.dump((vectorizer.get_config(), vocab), f)
     
-    # Build the model
+    # Build the model and update the TextVectorization layer's vocabulary
     model = build_model(vocabulary_size, embedding_dim, max_length)
-    
-    # Find the TextVectorization layer and set its vocabulary
+    # Find the TextVectorization layer in the model and set its vocabulary
     for layer in model.layers:
         if isinstance(layer, tf.keras.layers.TextVectorization):
             layer.set_vocabulary(vocab)
