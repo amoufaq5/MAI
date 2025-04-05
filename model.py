@@ -2,61 +2,53 @@ import os
 import pickle
 import numpy as np
 import tensorflow as tf
+from sklearn.preprocessing import LabelEncoder
 
-# Use the new Keras format or SavedModel directory
-MODEL_PATH = 'model/myd_model'  # ✅ Will save as a folder using SavedModel
+MODEL_PATH = 'model/myd_model.keras'
 VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
+ENCODER_PATH = 'model/label_encoder.pkl'
 
-
-def build_model(text_vectorizer, vocab_size=10000, embedding_dim=64, max_length=100):
+def build_model(text_vectorizer, vocab_size=10000, embedding_dim=64, max_length=100, num_classes=10):
     model = tf.keras.Sequential([
         text_vectorizer,
         tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim, mask_zero=True),
         tf.keras.layers.GlobalAveragePooling1D(),
         tf.keras.layers.Dense(64, activation='relu'),
-        tf.keras.layers.Dense(2, activation='softmax')  # 2 classes: OTC or Refer
+        tf.keras.layers.Dense(num_classes, activation='softmax')
     ])
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
 
-
 def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, max_length=100, epochs=5):
-    # Clean and verify text
-    train_texts = [t for t in train_texts if t.strip()]
-    if len(train_texts) == 0:
-        raise ValueError("All training texts are empty after cleaning.")
+    from sklearn.preprocessing import LabelEncoder
 
-    # Create and adapt the vectorizer
     text_vectorizer = tf.keras.layers.TextVectorization(
         max_tokens=vocab_size,
         output_mode='int',
         output_sequence_length=max_length
     )
+    train_texts = [t for t in train_texts if t.strip()]
     text_vectorizer.adapt(train_texts)
 
-    # Save vectorizer config and weights
+    # Label encode the drug names
+    encoder = LabelEncoder()
+    train_labels_encoded = encoder.fit_transform(train_labels)
+
     os.makedirs(os.path.dirname(VECTORIZER_PATH), exist_ok=True)
     with open(VECTORIZER_PATH, 'wb') as f:
         pickle.dump((text_vectorizer.get_config(), text_vectorizer.get_weights()), f)
 
-    # Build model
-    model = build_model(text_vectorizer, vocab_size, embedding_dim, max_length)
+    with open(ENCODER_PATH, 'wb') as f:
+        pickle.dump(encoder, f)
 
-    # Convert to NumPy arrays for training
-    train_texts_np = np.array(train_texts)
-    train_labels_np = np.array(train_labels)
+    num_classes = len(encoder.classes_)
+    model = build_model(text_vectorizer, vocab_size, embedding_dim, max_length, num_classes)
 
-    # Train model
-    model.fit(train_texts_np, train_labels_np, epochs=epochs, validation_split=0.2)
+    model.fit(np.array(train_texts), np.array(train_labels_encoded), epochs=epochs, validation_split=0.2)
+    model.save(MODEL_PATH, save_format='keras')
 
-    # Save model (use .keras or SavedModel format)
-    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-    model.save(MODEL_PATH, save_format='tf')  # Also works fine and safe
-
-
-    print(f"✅ Model trained and saved to: {MODEL_PATH}")
-    return model, text_vectorizer
-
+    print("✅ Model trained and saved.")
+    return model, text_vectorizer, encoder
 
 def load_vectorizer():
     with open(VECTORIZER_PATH, 'rb') as f:
@@ -65,14 +57,7 @@ def load_vectorizer():
     vectorizer.set_weights(weights)
     return vectorizer
 
-
-def load_trained_model():
-    model = tf.keras.models.load_model(MODEL_PATH)
-    vectorizer = load_vectorizer()
-    return model, vectorizer
-
-
-def predict_diagnosis(input_text, model, vectorizer):
-    prediction = model.predict([input_text])
-    predicted_class = prediction.argmax(axis=-1)[0]
-    return predicted_class, prediction[0]
+def load_encoder():
+    with open(ENCODER_PATH, 'rb') as f:
+        encoder = pickle.load(f)
+    return encoder
