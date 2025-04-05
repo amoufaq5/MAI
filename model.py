@@ -5,127 +5,53 @@ import pickle
 MODEL_PATH = 'model/myd_model.h5'
 VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
-def build_model(vocabulary_size, embedding_dim=64, max_length=100):
+def build_model(vocab_size, embedding_dim=64, max_length=100):
     model = tf.keras.Sequential([
-        # Input layer: each sample is a single string (scalar)
-        tf.keras.layers.Input(shape=(), dtype=tf.string, name='text_input'),
-        # TextVectorization layer with explicit standardization and splitting on whitespace
+        tf.keras.layers.Input(shape=(None,), dtype=tf.string, name='text_input'),
         tf.keras.layers.TextVectorization(
-            standardize="lower_and_strip_punctuation",
-            split="whitespace",
-            max_tokens=vocabulary_size,
+            max_tokens=vocab_size,
             output_mode='int',
             output_sequence_length=max_length
         ),
-        tf.keras.layers.Embedding(input_dim=vocabulary_size, output_dim=embedding_dim, mask_zero=True),
+        tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim, mask_zero=True),
         tf.keras.layers.GlobalAveragePooling1D(),
         tf.keras.layers.Dense(64, activation='relu'),
-        tf.keras.layers.Dense(2, activation='softmax')  # Two classes: 0 = OTC safe, 1 = Refer doctor
+        tf.keras.layers.Dense(2, activation='softmax')  # 2 output classes
     ])
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
 
-def safe_get_vocabulary(vectorizer):
-    """
-    Retrieves and processes the vocabulary from the TextVectorization layer.
-    Prints diagnostic information and raises an error if the resulting vocabulary is empty.
-    """
-    try:
-        raw_vocab = vectorizer.get_vocabulary()
-        print("Raw vocabulary from adaptation:", raw_vocab[:20])
-    except UnicodeDecodeError:
-        # Fallback: iterate over vocabulary indices using index_to_string()
-        raw_vocab = []
-        vocab_size = vectorizer._lookup_layer.vocab_size()
-        for i in range(vocab_size):
-            try:
-                token = vectorizer._lookup_layer.index_to_string(i)
-            except Exception:
-                token = ''
-            raw_vocab.append(token)
-    
-    # Process raw_vocab: decode tokens if necessary and remove empty tokens
-    vocab = []
-    for token in raw_vocab:
-        try:
-            decoded = tf.compat.as_text(token, vectorizer.encoding)
-            vocab.append(decoded)
-        except Exception:
-            vocab.append('')
-    
-    # Remove empty tokens and duplicates while preserving order
-    vocab = [token for token in vocab if token != '']
-    seen = set()
-    unique_vocab = []
-    for token in vocab:
-        if token not in seen:
-            unique_vocab.append(token)
-            seen.add(token)
-    
-    if not unique_vocab:
-        raise ValueError("The vocabulary is empty after processing. "
-                         "Please check your training texts to ensure they are not empty or misformatted.")
-    
-    print("Sample unique vocabulary tokens:", unique_vocab[:10])
-    return unique_vocab
-
-def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=64, max_length=100, epochs=10):
-    # Ensure all texts are strings
-    train_texts = [str(t) for t in train_texts]
-    
-    # Create the TextVectorization layer with explicit standardization and splitting
-    vectorizer = tf.keras.layers.TextVectorization(
-        standardize="lower_and_strip_punctuation",
-        split="whitespace",
-        max_tokens=vocabulary_size,
+def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, max_length=100, epochs=5):
+    # Create and adapt the text vectorization layer
+    text_vectorizer = tf.keras.layers.TextVectorization(
+        max_tokens=vocab_size,
         output_mode='int',
         output_sequence_length=max_length
     )
-    # Adapt using a tf.data.Dataset for improved handling
-    ds = tf.data.Dataset.from_tensor_slices(train_texts).batch(32)
-    vectorizer.adapt(ds)
-    
-    # Retrieve the vocabulary using our safe helper function
-    vocab = safe_get_vocabulary(vectorizer)
-    
-    # Ensure the directory for saving the vectorizer exists
+
+    # SAFEGUARD: Filter out empty strings before adapting
+    train_texts = [t for t in train_texts if t.strip()]
+    if len(train_texts) == 0:
+        raise ValueError("All training texts are empty after cleaning.")
+
+    text_vectorizer.adapt(train_texts)
+    vocab = text_vectorizer.get_vocabulary()
+
+    if len(vocab) <= 2:
+        raise ValueError("Vocabulary is too small after processing. Check dataset for valid tokens.")
+
+    # Save vectorizer config + weights
     os.makedirs(os.path.dirname(VECTORIZER_PATH), exist_ok=True)
-    # Save the vectorizer configuration and vocabulary
     with open(VECTORIZER_PATH, 'wb') as f:
-        pickle.dump((vectorizer.get_config(), vocab), f)
-    
-    # Build the model and update the TextVectorization layer's vocabulary.
-    model = build_model(vocabulary_size, embedding_dim, max_length)
-    # Find the TextVectorization layer in the model and set its vocabulary
-    for layer in model.layers:
-        if isinstance(layer, tf.keras.layers.TextVectorization):
-            layer.set_vocabulary(vocab)
-            break
-    
-    # Train the model
+        pickle.dump((text_vectorizer.get_config(), text_vectorizer.get_weights()), f)
+
+    # Build model and assign weights to vectorizer layer inside it
+    model = build_model(vocab_size, embedding_dim, max_length)
+    model.layers[1].set_weights(text_vectorizer.get_weights())
+
     model.fit(train_texts, train_labels, epochs=epochs, validation_split=0.2)
-    
-    # Ensure the directory for saving the model exists
+
+    # Save model
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
     model.save(MODEL_PATH)
-    return model, vectorizer
-
-def load_vectorizer():
-    # Load configuration and vocabulary from file
-    with open(VECTORIZER_PATH, 'rb') as f:
-        config, vocab = pickle.load(f)
-    vectorizer = tf.keras.layers.TextVectorization.from_config(config)
-    vectorizer.set_vocabulary(vocab)
-    return vectorizer
-
-def load_trained_model():
-    # Load the saved model and vectorizer
-    model = tf.keras.models.load_model(MODEL_PATH)
-    vectorizer = load_vectorizer()
-    return model, vectorizer
-
-def predict_diagnosis(input_text, model, vectorizer):
-    # Given an input text, predict whether OTC is safe or a referral is needed.
-    prediction = model.predict([input_text])
-    predicted_class = prediction.argmax(axis=-1)[0]
-    return predicted_class, prediction[0]
+    return model, text_vectorizer
