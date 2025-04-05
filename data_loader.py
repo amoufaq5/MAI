@@ -19,22 +19,37 @@ def load_dataset(csv_file_path):
 
     # Filter rows to include only OTC data (assuming the value is 'OTC' in upper-case)
     df_otc = df[df[drug_col].str.upper() == 'OTC']
+    
+    # Drop rows with missing or empty 'symptoms' or 'overview'
+    df_otc = df_otc.dropna(subset=['symptoms', 'overview'])
+    df_otc = df_otc[(df_otc['symptoms'].str.strip() != '') & (df_otc['overview'].str.strip() != '')]
+    
+    print("Filtered dataset shape:", df_otc.shape)
+    print("First few rows of filtered data:")
+    print(df_otc.head())
+    
     return df_otc
 
 def preprocess_data(df):
-    # Combine relevant text fields for input to the model; here we use 'symptoms' and 'overview'
-    # Also normalize column names for these fields to ensure consistency
+    # Check for expected columns
     if 'symptoms' not in df.columns or 'overview' not in df.columns:
         raise KeyError("Expected columns 'symptoms' and 'overview' not found in the dataset.")
+    
+    # Combine 'symptoms' and 'overview' into a single text field for model input
     df['text'] = df['symptoms'] + ' ' + df['overview']
     # Since the dataset is OTC only, label these as 0 (OTC safe)
     df['label'] = 0
     texts = df['text'].tolist()
     labels = df['label'].tolist()
+    
+    print("Sample training texts:")
+    for text in texts[:5]:
+        print(text)
+    
     return texts, labels
 
 if __name__ == '__main__':
-    # For testing purposes: update the file path as needed
-    csv_file_path = 'data/dataset.csv'  # or 'data.csv' if placed in project root
+    # Update the file path as needed (e.g., 'data/dataset.csv' or 'data.csv')
+    csv_file_path = 'data/dataset.csv'
     df_otc = load_dataset(csv_file_path)
-    print("Filtered dataset shape:", df_otc.shape)
+    texts, labels = preprocess_data(df_otc)
