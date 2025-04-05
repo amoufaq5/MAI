@@ -9,9 +9,10 @@ def build_model(vocabulary_size, embedding_dim=64, max_length=100):
     model = tf.keras.Sequential([
         # Input layer: each sample is a single string (scalar)
         tf.keras.layers.Input(shape=(), dtype=tf.string, name='text_input'),
-        # TextVectorization layer with explicit standardization to remove punctuation and lowercase text.
+        # TextVectorization layer with explicit standardization and splitting on whitespace
         tf.keras.layers.TextVectorization(
             standardize="lower_and_strip_punctuation",
+            split="whitespace",
             max_tokens=vocabulary_size,
             output_mode='int',
             output_sequence_length=max_length
@@ -26,11 +27,12 @@ def build_model(vocabulary_size, embedding_dim=64, max_length=100):
 
 def safe_get_vocabulary(vectorizer):
     """
-    Attempts to retrieve and process the vocabulary from the TextVectorization layer.
-    If the resulting vocabulary is empty, raises an error.
+    Retrieves and processes the vocabulary from the TextVectorization layer.
+    Prints diagnostic information and raises an error if the resulting vocabulary is empty.
     """
     try:
         raw_vocab = vectorizer.get_vocabulary()
+        print("Raw vocabulary from adaptation:", raw_vocab[:20])
     except UnicodeDecodeError:
         # Fallback: iterate over vocabulary indices using index_to_string()
         raw_vocab = []
@@ -42,7 +44,7 @@ def safe_get_vocabulary(vectorizer):
                 token = ''
             raw_vocab.append(token)
     
-    # Process raw_vocab by decoding tokens and then remove empty tokens
+    # Process raw_vocab: decode tokens if necessary and remove empty tokens
     vocab = []
     for token in raw_vocab:
         try:
@@ -64,21 +66,24 @@ def safe_get_vocabulary(vectorizer):
         raise ValueError("The vocabulary is empty after processing. "
                          "Please check your training texts to ensure they are not empty or misformatted.")
     
-    print("Sample vocabulary tokens:", unique_vocab[:10])
+    print("Sample unique vocabulary tokens:", unique_vocab[:10])
     return unique_vocab
 
 def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=64, max_length=100, epochs=10):
     # Ensure all texts are strings
     train_texts = [str(t) for t in train_texts]
     
-    # Create and adapt the TextVectorization layer on the training texts
+    # Create the TextVectorization layer with explicit standardization and splitting
     vectorizer = tf.keras.layers.TextVectorization(
         standardize="lower_and_strip_punctuation",
+        split="whitespace",
         max_tokens=vocabulary_size,
         output_mode='int',
         output_sequence_length=max_length
     )
-    vectorizer.adapt(train_texts)
+    # Adapt using a tf.data.Dataset for improved handling
+    ds = tf.data.Dataset.from_tensor_slices(train_texts).batch(32)
+    vectorizer.adapt(ds)
     
     # Retrieve the vocabulary using our safe helper function
     vocab = safe_get_vocabulary(vectorizer)
