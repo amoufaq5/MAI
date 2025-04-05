@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, session
-from user_auth import authenticate_user, init_user_db
+from user_auth import authenticate_user, init_user_db, get_all_users, add_user, delete_user
 from chatbot import ChatBot
 import os
 
@@ -56,6 +56,30 @@ def chatbot_ui():
         session['chatbot'] = bot.__dict__
 
     return render_template('chatbot.html', user_input=user_input, bot_reply=bot_reply)
+
+@app.route('/admin/users')
+def admin_users():
+    if 'username' not in session or session.get('role') != 'admin':
+        return redirect(url_for('login'))
+    users = get_all_users()
+    return render_template('admin_users.html', users=users)
+
+@app.route('/admin/users/add', methods=['POST'])
+def admin_add_user():
+    if 'username' not in session or session.get('role') != 'admin':
+        return redirect(url_for('login'))
+    username = request.form['username']
+    password = request.form['password']
+    role = request.form['role']
+    add_user(username, password, role)
+    return redirect(url_for('admin_users'))
+
+@app.route('/admin/users/delete/<username>')
+def admin_delete_user(username):
+    if 'username' not in session or session.get('role') != 'admin':
+        return redirect(url_for('login'))
+    delete_user(username)
+    return redirect(url_for('admin_users'))
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
