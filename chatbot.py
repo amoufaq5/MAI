@@ -20,6 +20,8 @@ class ChatBot:
         self.current_index = 0
         self.collected = []
         self.finished = False
+        self.session_id, self.log_file = start_new_session()
+
 
     def handle_message(self, message):
         if self.finished:
