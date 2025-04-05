@@ -26,8 +26,8 @@ def build_model(vocab_size, embedding_dim=64, max_length=100):
 def safe_get_vocabulary(vectorizer):
     """
     Attempts to retrieve the vocabulary from the TextVectorization layer.
-    If a UnicodeDecodeError occurs, falls back to iterating over each index 
-    using the lookup layer's index_to_string() method.
+    If a UnicodeDecodeError occurs, falls back to iterating over the
+    vocabulary indices using the lookup layer's index_to_string() method.
     """
     try:
         raw_vocab = vectorizer.get_vocabulary()
@@ -65,6 +65,8 @@ def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, m
     # Retrieve the vocabulary using our safe helper function
     vocab = safe_get_vocabulary(vectorizer)
     
+    # Ensure the directory for saving the vectorizer exists
+    os.makedirs(os.path.dirname(VECTORIZER_PATH), exist_ok=True)
     # Save the vectorizer configuration and vocabulary
     with open(VECTORIZER_PATH, 'wb') as f:
         pickle.dump((vectorizer.get_config(), vocab), f)
@@ -76,7 +78,7 @@ def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, m
     # Train the model
     model.fit(train_texts, train_labels, epochs=epochs, validation_split=0.2)
     
-    # Save the trained model
+    # Ensure the directory for saving the model exists
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
     model.save(MODEL_PATH)
     return model, vectorizer
