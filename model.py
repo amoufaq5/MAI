@@ -5,17 +5,17 @@ import pickle
 MODEL_PATH = 'model/myd_model.h5'
 VECTORIZER_PATH = 'model/myd_vectorizer.pkl'
 
-def build_model(vocab_size, embedding_dim=64, max_length=100):
+def build_model(vocabulary_size, embedding_dim=64, max_length=100):
     model = tf.keras.Sequential([
         # Input layer: each sample is a single string, so shape=() (scalar)
         tf.keras.layers.Input(shape=(), dtype=tf.string, name='text_input'),
         # TextVectorization converts text to integer tokens
         tf.keras.layers.TextVectorization(
-            max_tokens=vocab_size,
+            max_tokens=vocabulary_size,
             output_mode='int',
             output_sequence_length=max_length
         ),
-        tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim, mask_zero=True),
+        tf.keras.layers.Embedding(input_dim=vocabulary_size, output_dim=embedding_dim, mask_zero=True),
         tf.keras.layers.GlobalAveragePooling1D(),
         tf.keras.layers.Dense(64, activation='relu'),
         tf.keras.layers.Dense(2, activation='softmax')  # Two classes: 0 = OTC safe, 1 = Refer doctor
@@ -50,13 +50,13 @@ def safe_get_vocabulary(vectorizer):
             vocab.append(token)
         return vocab
 
-def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, max_length=100, epochs=10):
+def train_model(train_texts, train_labels, vocabulary_size=10000, embedding_dim=64, max_length=100, epochs=10):
     # Ensure all texts are strings
     train_texts = [str(t) for t in train_texts]
     
     # Create and adapt the TextVectorization layer on the training texts
     vectorizer = tf.keras.layers.TextVectorization(
-        max_tokens=vocab_size,
+        max_tokens=vocabulary_size,
         output_mode='int',
         output_sequence_length=max_length
     )
@@ -71,9 +71,14 @@ def train_model(train_texts, train_labels, vocab_size=10000, embedding_dim=64, m
     with open(VECTORIZER_PATH, 'wb') as f:
         pickle.dump((vectorizer.get_config(), vocab), f)
     
-    # Build the model and set the vectorization layer's vocabulary
-    model = build_model(vocab_size, embedding_dim, max_length)
-    model.layers[1].set_vocabulary(vocab)
+    # Build the model
+    model = build_model(vocabulary_size, embedding_dim, max_length)
+    
+    # Find the TextVectorization layer and set its vocabulary
+    for layer in model.layers:
+        if isinstance(layer, tf.keras.layers.TextVectorization):
+            layer.set_vocabulary(vocab)
+            break
     
     # Train the model
     model.fit(train_texts, train_labels, epochs=epochs, validation_split=0.2)
