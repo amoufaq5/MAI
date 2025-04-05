@@ -3,17 +3,126 @@ import json
 import os
 import pandas as pd
 from collections import Counter
-from user_auth import authenticate_user, change_password, init_user_db
+from user_auth import authenticate_user, change_password, init_user_db, hash_password
 from user_manager import list_users, add_user, delete_user
+from flask_mail import Mail, Message
+import uuid
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = "your-secret-key"
 init_user_db()
 
+# Email setup
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 465
+app.config['MAIL_USE_TLS'] = False
+app.config['MAIL_USE_SSL'] = True
+app.config['MAIL_USERNAME'] = 'your_email@gmail.com'  # Change this
+app.config['MAIL_PASSWORD'] = 'your_email_password'  # Change this
+app.config['MAIL_DEFAULT_SENDER'] = 'your_email@gmail.com'  # Change this
+mail = Mail(app)
+
 CHAT_FILE = "chat_log.json"
 if not os.path.exists(CHAT_FILE):
     with open(CHAT_FILE, "w", encoding="utf-8") as f:
         json.dump([], f)
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        role = request.form.get("role")
+
+        if add_user(username, password, role):
+            return redirect("/login")
+        return "Username already exists", 400
+
+    return render_template_string("""
+    <html><body style='text-align:center;'>
+    <h2>Register</h2>
+    <form method="post">
+        <input name="username" placeholder="Username"><br><br>
+        <input type="password" name="password" placeholder="Password"><br><br>
+        <select name="role"><option value='doctor'>Doctor</option><option value='admin'>Admin</option></select><br><br>
+        <button type="submit">Register</button>
+    </form>
+    <a href='/login'>Already have an account? Login</a>
+    </body></html>
+    """)
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        username = request.form.get("username")
+        if not username:
+            return "Please provide a username", 400
+        reset_token = str(uuid.uuid4())
+
+        # Send reset link via email
+        msg = Message("Password Reset Request", recipients=[username])
+        reset_link = f"http://localhost:7000/reset-password/{reset_token}"
+        msg.body = f"Click the link to reset your password: {reset_link}"
+        mail.send(msg)
+
+        return f"Password reset link sent to {username}. Check your email."
+
+    return render_template_string("""
+    <html><body style='text-align:center;'>
+    <h2>Forgot Password</h2>
+    <form method="post">
+        <input name="username" placeholder="Username"><br><br>
+        <button type="submit">Send Reset Link</button>
+    </form>
+    </body></html>
+    """)
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    if request.method == "POST":
+        new_password = request.form.get("new_password")
+        # Here you would match token to a user and reset their password
+        return "Password successfully updated. Please log in."
+
+    return render_template_string("""
+    <html><body style='text-align:center;'>
+    <h2>Reset Password</h2>
+    <form method="post">
+        <input type="password" name="new_password" placeholder="New Password"><br><br>
+        <button type="submit">Reset Password</button>
+    </form>
+    </body></html>
+    """)
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        role = authenticate_user(username, password)
+        if role:
+            session["authenticated"] = True
+            session["user"] = username
+            session["role"] = role
+            return redirect("/")
+        return "Invalid username or password", 403
+
+    return render_template_string("""
+    <html><body style='text-align:center;margin-top:100px;font-family:sans-serif;'>
+    <h2>Login</h2>
+    <form method="post">
+        <input name="username" placeholder="Username"><br><br>
+        <input type="password" name="password" placeholder="Password"><br><br>
+        <button type="submit">Login</button>
+    </form>
+    </body></html>
+    """)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
 
 @app.route("/")
 def dashboard():
@@ -59,122 +168,6 @@ def send_chat():
     with open(CHAT_FILE, "w", encoding="utf-8") as f:
         json.dump(chat, f, indent=2)
     return "ok"
-
-@app.route("/export")
-def export_excel():
-    if session.get("role") != "admin":
-        return "Unauthorized", 403
-    with open("referrals.json", encoding="utf-8") as f:
-        data = json.load(f)
-    df = pd.DataFrame(data)
-    file_path = "referrals_export.xlsx"
-    df.to_excel(file_path, index=False)
-    return send_file(file_path, as_attachment=True)
-
-@app.route("/users", methods=["GET", "POST"])
-def manage_users():
-    if session.get("role") != "admin":
-        return "Unauthorized", 403
-
-    message = ""
-    if request.method == "POST":
-        if request.form.get("action") == "add":
-            if add_user(request.form["username"], request.form["password"], request.form["role"]):
-                message = "✅ User added."
-            else:
-                message = "❌ Username already exists."
-        elif request.form.get("action") == "delete":
-            if delete_user(request.form["username"]):
-                message = "🗑️ User deleted."
-            else:
-                message = "❌ User not found."
-
-    users = list_users()
-    user_list = "".join([f"<li>{u['username']} ({u['role']})</li>" for u in users])
-    return render_template_string(f"""
-    <!DOCTYPE html>
-    <html><head><title>User Manager</title></head>
-    <body style='font-family:sans-serif;'>
-        <h2>Manage Users</h2>
-        <form method='post'>
-            <input name='username' placeholder='Username'>
-            <input name='password' placeholder='Password'>
-            <select name='role'><option value='doctor'>Doctor</option><option value='admin'>Admin</option></select>
-            <button name='action' value='add'>Add User</button>
-        </form><br>
-        <form method='post'>
-            <input name='username' placeholder='Username'>
-            <button name='action' value='delete'>Delete User</button>
-        </form><br>
-        <p>{message}</p>
-        <h3>All Users</h3>
-        <ul>{user_list}</ul>
-        <a href='/'>&larr; Back</a>
-    </body></html>
-    """)
-
-@app.route("/pdf/<session_id>")
-def download_pdf(session_id):
-    pdf_path = f"referral_letters/referral_{session_id}.pdf"
-    if os.path.exists(pdf_path):
-        return send_file(pdf_path, as_attachment=True)
-    return "PDF not found", 404
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        role = authenticate_user(username, password)
-        if role:
-            session["authenticated"] = True
-            session["user"] = username
-            session["role"] = role
-            return redirect("/")
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html><head><title>Login</title></head>
-    <body style='text-align:center;margin-top:100px;font-family:sans-serif;'>
-        <h2>Login</h2>
-        <form method="post">
-            <input name="username" placeholder="Username"><br><br>
-            <input type="password" name="password" placeholder="Password"><br><br>
-            <button type="submit">Login</button>
-        </form>
-    </body></html>
-    """)
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
-
-@app.route("/change-password", methods=["GET", "POST"])
-def change_pw():
-    if not session.get("authenticated"):
-        return redirect("/login")
-
-    message = ""
-    if request.method == "POST":
-        new_pw = request.form.get("new_password")
-        if change_password(session["user"], new_pw):
-            message = "✅ Password changed successfully."
-        else:
-            message = "❌ Error changing password."
-
-    return render_template_string(f"""
-    <!DOCTYPE html>
-    <html><head><title>Change Password</title></head>
-    <body style='text-align:center;margin-top:100px;font-family:sans-serif;'>
-        <h2>Change Password for {session['user']}</h2>
-        <form method="post">
-            <input type="password" name="new_password" placeholder="New Password">
-            <button type="submit">Change</button>
-        </form>
-        <p>{message}</p>
-        <a href='/'>⟵ Back</a>
-    </body></html>
-    """)
 
 if __name__ == "__main__":
     app.run(port=7000, debug=True)
