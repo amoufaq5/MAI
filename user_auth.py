@@ -1,42 +1,60 @@
 import json
-import os
 import bcrypt
+import os
 
-USERS_FILE = "users.json"
+USER_DB_FILE = 'users.json'
 
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        return []
-    with open(USERS_FILE, encoding="utf-8") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return []
+# Initialize user database if it doesn't exist
+def init_user_db():
+    if not os.path.exists(USER_DB_FILE):
+        default_users = {
+            "admin": {
+                "password": bcrypt.hashpw("admin1234".encode(), bcrypt.gensalt()).decode(),
+                "role": "admin"
+            },
+            "doctor": {
+                "password": bcrypt.hashpw("doctor1234".encode(), bcrypt.gensalt()).decode(),
+                "role": "doctor"
+            }
+        }
+        with open(USER_DB_FILE, 'w') as f:
+            json.dump(default_users, f, indent=2)
 
-def save_users(users):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, indent=2)
-
+# Authenticate a user
 def authenticate_user(username, password):
-    users = load_users()
-    for user in users:
-        if user["username"] == username:
-            if bcrypt.checkpw(password.encode(), user["password"].encode()):
-                return user["role"]
+    with open(USER_DB_FILE, 'r') as f:
+        users = json.load(f)
+    user = users.get(username)
+    if user and bcrypt.checkpw(password.encode(), user['password'].encode()):
+        return user['role']
     return None
 
-def change_password(username, new_password):
-    users = load_users()
-    for user in users:
-        if user["username"] == username:
-            user["password"] = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-            save_users(users)
-            return True
+# Get all users for admin listing
+def get_all_users():
+    with open(USER_DB_FILE, 'r') as f:
+        return json.load(f)
+
+# Add new user
+def add_user(username, password, role):
+    with open(USER_DB_FILE, 'r') as f:
+        users = json.load(f)
+    if username in users:
+        return False
+    users[username] = {
+        "password": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
+        "role": role
+    }
+    with open(USER_DB_FILE, 'w') as f:
+        json.dump(users, f, indent=2)
+    return True
+
+# Delete a user
+def delete_user(username):
+    with open(USER_DB_FILE, 'r') as f:
+        users = json.load(f)
+    if username in users:
+        del users[username]
+        with open(USER_DB_FILE, 'w') as f:
+            json.dump(users, f, indent=2)
+        return True
     return False
-
-def init_user_db():
-    if not os.path.exists(USERS_FILE):
-        save_users([])
-
-def hash_password(password):
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
