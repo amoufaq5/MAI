@@ -1,5 +1,6 @@
 from session_logger import start_new_session, log_message, log_final_recommendation
 from model import predict_drug
+from response_templates import make_human_response
 
 class ChatBot:
     def __init__(self, model, vectorizer, encoder, df):
@@ -46,22 +47,20 @@ class ChatBot:
             log_message(self.log_file, "bot", response)
             return response
         else:
-            # All questions answered – process diagnosis
+            # All questions answered – generate recommendation
             full_input = " ".join(self.collected)
             drug, confidence, side_effects = predict_drug(
                 full_input, self.model, self.vectorizer, self.encoder, self.df
             )
             self.finished = True
 
-            response = (
-                f"✅ Based on your symptoms, you can take:\n"
-                f"**🩺 {drug}**\n"
-                f"💊 *Confidence:* {confidence:.1f}%\n"
-                f"⚠️ *Common side effects:* {side_effects if side_effects else 'N/A'}"
-            )
+            # Use natural language template
+            response = make_human_response(drug, confidence, side_effects)
 
+            # Log result
             log_final_recommendation(self.log_file, drug, confidence, side_effects)
             log_message(self.log_file, "bot", response)
+
             return response
 
     def reset(self):
