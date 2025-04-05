@@ -9,6 +9,11 @@ import json
 import os
 import requests
 
+DANGER_KEYWORDS = [
+    "bleeding", "seizure", "vomiting blood", "chest pain", "shortness of breath",
+    "نزيف", "ألم في الصدر", "نوبات", "ضيق التنفس"
+]
+
 class ChatBot:
     def __init__(self, model, vectorizer, encoder, df):
         self.model = model
@@ -53,23 +58,19 @@ class ChatBot:
     def handle_message(self, message):
         log_message(self.log_file, "user", message)
 
-        # Detect language
         try:
             self.lang = detect(message)
         except:
             self.lang = "en"
 
-        # Use proper language set
         self.questions = self.questions_ar if self.lang == "ar" else self.questions_en
 
-        # Reset if conversation is finished
         if self.finished and not self.waiting_for_feedback:
             self.reset()
             response = "ابدأ من جديد بكتابة 'start'" if self.lang == "ar" else "Type 'start' to begin a new diagnosis."
             log_message(self.log_file, "bot", response)
             return response
 
-        # Handle restart
         if message.lower() == 'start':
             self.reset()
             self.questions = self.questions_ar if self.lang == "ar" else self.questions_en
@@ -77,7 +78,6 @@ class ChatBot:
             log_message(self.log_file, "bot", response)
             return response
 
-        # Handle feedback response
         if self.waiting_for_feedback:
             if message.strip().lower() in ["yes", "نعم"]:
                 store_feedback(self.session_id, self.last_input_text, self.last_prediction, self.last_prediction, "positive")
@@ -100,7 +100,6 @@ class ChatBot:
             log_message(self.log_file, "bot", response)
             return response
 
-        # Normal diagnostic flow
         if self.current_index < len(self.questions):
             self.collected.append(message)
             self.current_index += 1
@@ -110,7 +109,6 @@ class ChatBot:
             log_message(self.log_file, "bot", response)
             return response
         else:
-            # Process recommendation
             full_input = " ".join(self.collected)
             drug, confidence, side_effects = predict_drug(
                 full_input, self.model, self.vectorizer, self.encoder, self.df
@@ -120,11 +118,9 @@ class ChatBot:
             self.last_prediction = drug
             self.last_input_text = full_input
 
-            # Save user profile and logs
             save_user_profile(self.session_id, self.collected, self.lang)
             log_final_recommendation(self.log_file, drug, confidence, side_effects)
 
-            # Generate FHIR export bundle
             bundle = generate_fhir_bundle(
                 self.session_id,
                 {
@@ -149,13 +145,15 @@ class ChatBot:
             with open(f"ehr_exports/fhir_bundle_{self.session_id}.json", "w", encoding="utf-8") as f:
                 json.dump(bundle, f, indent=2, ensure_ascii=False)
 
-            # Send bundle to mock EHR server
+            referral_msg = ""
             try:
-                requests.post("http://localhost:6000/ehr/receive", json=bundle)
+                res = requests.post("http://localhost:6000/ehr/receive", json=bundle)
+                if res.ok and res.json().get("referral"):
+                    referral_msg = "\n🚨 Your symptoms require urgent medical attention. Please consult a doctor immediately."
             except Exception as e:
                 print("⚠️ Failed to send to mock EHR:", e)
 
-            response = make_human_response(drug, confidence, side_effects, lang=self.lang)
+            response = make_human_response(drug, confidence, side_effects, lang=self.lang) + referral_msg
             response += "\n\nDid this help you? (yes/no)" if self.lang == "en" else "\n\nهل ساعدك هذا؟ (نعم / لا)"
             log_message(self.log_file, "bot", response)
             return response
