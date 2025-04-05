@@ -68,9 +68,19 @@ def load_trained_model():
     encoder = load_encoder()
     return model, vectorizer, encoder
 
-def predict_drug(input_text, model, vectorizer, encoder):
+def predict_drug(input_text, model, vectorizer, encoder, df=None):
     prediction = model.predict([input_text])
     predicted_class = prediction.argmax(axis=-1)[0]
+    confidence = float(prediction[0][predicted_class]) * 100
     predicted_drug = encoder.inverse_transform([predicted_class])[0]
-    return predicted_drug, prediction[0]
+
+    # Optional: show side effects from dataset if passed
+    side_effects = "Unknown"
+    if df is not None:
+        row = df[df['drug name'].str.lower() == predicted_drug.lower()]
+        if not row.empty and 'side effects' in row.columns:
+            side_effects = row.iloc[0]['side effects']
+
+    return predicted_drug, confidence, side_effects
+
 
