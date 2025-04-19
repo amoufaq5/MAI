@@ -1,38 +1,31 @@
-# clean_text.py
-import re
-
-def basic_clean(text):
-    text = text.replace("\xa0", " ").replace("\n", " ")
-    text = re.sub(r"\s+", " ", text)  # remove excess spaces
-    text = re.sub(r"\[[^\]]*\]", "", text)  # remove citations like [1], [a]
-    text = re.sub(r"https?://\S+", "", text)  # remove links
-    text = re.sub(r"[\r\n\t]", " ", text)
-    text = text.strip()
-    return text
+import sys
+import json
+from pathlib import Path
 
 def clean_and_save(input_path, output_path):
-    import json
     with open(input_path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
+        if input_path.endswith(".json"):
+            data = json.load(f)
+        elif input_path.endswith(".csv"):
+            import pandas as pd
+            data = pd.read_csv(input_path).to_dict(orient="records")
+        elif input_path.endswith(".txt"):
+            text = f.read()
+            data = [{"text": line.strip()} for line in text.splitlines() if line.strip()]
+        else:
+            print(f"❌ Unsupported file format: {input_path}")
+            return
 
-    if isinstance(raw, list):
-        for entry in raw:
-            if "content" in entry:
-                entry["cleaned"] = basic_clean(entry["content"])
-            elif "abstract" in entry:
-                entry["cleaned"] = basic_clean(entry.get("abstract", ""))
-            elif "label" in entry:
-                entry["cleaned"] = basic_clean(entry.get("label", ""))
-    else:
-        raw["cleaned"] = basic_clean(raw.get("content") or raw.get("abstract") or raw.get("label") or "")
+    # Very basic clean logic
+    cleaned_data = []
+    for entry in data:
+        text = json.dumps(entry, ensure_ascii=False)
+        cleaned_data.append({"text": text.replace("\n", " ").strip()})
 
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(raw, f, indent=2)
+        json.dump(cleaned_data, f, indent=2, ensure_ascii=False)
 
 if __name__ == "__main__":
-    # Example usage
-    from pathlib import Path
-    input_file = "data/webmd/raw/Flu_Symptoms_and_Treatment_-_WebMD.json"
-    output_file = Path(input_file).with_name("Flu_Symptoms_and_Treatment_cleaned.json")
-    clean_and_save(input_file, str(output_file))
-    print("✅ Cleaned and saved.")
+    input_file = sys.argv[1]
+    output_file = sys.argv[2]
+    clean_and_save(input_file, output_file)
