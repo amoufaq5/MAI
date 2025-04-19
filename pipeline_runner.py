@@ -1,30 +1,42 @@
-# pipeline_runner.py
 import os
 from pathlib import Path
 import subprocess
 
-# List of example raw scraped files to process
-target_files = [
-    "data/webmd/raw/Flu_Symptoms_and_Treatment_-_WebMD.json",
-    "data/cdc/raw/Flu_Symptoms_-_CDC.json",
-    "data/who/raw/Influenza_(Seasonal)_-_WHO.json",
-    "data/openfda/raw/openfda_labels.json",
-    "data/pubmed/raw/diabetes_symptoms.json",
-    "data/dailymed/raw/paracetamol.json"
-]
+# Define data sources
+sources = ["webmd", "cdc", "who", "openfda", "pubmed", "dailymed"]
+base_dir = Path("data")
 
-# Run steps: clean → tag → jsonl
-for file_path in target_files:
-    print(f"🔄 Processing {file_path}...")
-    base = Path(file_path).stem.replace(".json", "")
+def run_step(script, input_path, output_path):
+    try:
+        subprocess.run(["python", script, input_path, output_path], check=True)
+    except subprocess.CalledProcessError:
+        print(f"❌ Error running {script} on {input_path}")
 
-    cleaned_path = file_path.replace(".json", "_cleaned.json")
-    tagged_path = file_path.replace(".json", "_cleaned_tagged.json")
-    formatted_path = file_path.replace("raw", "formatted").replace(".json", ".jsonl")
-    os.makedirs(Path(formatted_path).parent, exist_ok=True)
+def run_pipeline():
+    for source in sources:
+        raw_dir = base_dir / source / "raw"
+        formatted_dir = base_dir / source / "formatted"
+        formatted_dir.mkdir(parents=True, exist_ok=True)
 
-    subprocess.run(["python", "clean_text.py", file_path, cleaned_path])
-    subprocess.run(["python", "tag_symptoms.py", cleaned_path, tagged_path])
-    subprocess.run(["python", "convert_to_jsonl.py", tagged_path, formatted_path])
+        for file in raw_dir.glob("*.json"):
+            base_name = file.stem
 
-    print(f"✅ Final formatted file saved to: {formatted_path}\n")
+            print(f"🔄 Processing {file}...")
+
+            cleaned = raw_dir / f"{base_name}_cleaned.json"
+            tagged = raw_dir / f"{base_name}_cleaned_tagged.json"
+            final = formatted_dir / f"{base_name}.jsonl"
+
+            # Step 1: Clean
+            run_step("clean_text.py", str(file), str(cleaned))
+
+            # Step 2: Tag
+            run_step("tag_symptoms.py", str(cleaned), str(tagged))
+
+            # Step 3: Convert
+            run_step("convert_to_jsonl.py", str(tagged), str(final))
+
+            print(f"✅ Final formatted file saved to: {final}")
+
+if __name__ == "__main__":
+    run_pipeline()
